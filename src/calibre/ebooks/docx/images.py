@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -60,6 +60,26 @@ def get_image_properties(parent, XPath, get):
         title = docPr.get('title') or title
         if docPr.get('hidden', None) in {'true', 'on', '1'}:
             ans['display'] = 'none'
+    transforms = []
+    for graphic in XPath('./a:graphic')(parent):
+        for xfrm in XPath('descendant::a:xfrm')(graphic):
+            rot = xfrm.get('rot')
+            if rot:
+                try:
+                    rot = int(rot) / 60000
+                except Exception:
+                    rot = None
+            if rot:
+                transforms.append(f'rotate({rot:g}deg)')
+            fliph = xfrm.get('flipH')
+            if fliph in ('1', 'true'):
+                transforms.append('scaleX(-1)')
+            flipv = xfrm.get('flipV')
+            if flipv in ('1', 'true'):
+                transforms.append('scaleY(-1)')
+
+    if transforms:
+        ans['transform'] = ' '.join(transforms)
 
     return ans, alt, title
 
@@ -286,9 +306,12 @@ class Images(object):
                 except LinkedImageNotFound as err:
                     self.log.warn('Linked image: %s not found, ignoring' % err.fname)
                     continue
-                img = IMG(src='images/%s' % src, style="display:block")
+                style = get(imagedata.getparent(), 'style')
+                img = IMG(src='images/%s' % src)
                 alt = get(imagedata, 'o:title')
                 img.set('alt', alt or 'Image')
+                if 'position:absolute' in style:
+                    img.set('style', 'display: block')
                 yield img
 
     def get_float_properties(self, anchor, style, page):

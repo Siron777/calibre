@@ -1,15 +1,15 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2008, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
 
-import re, numbers
+
+import regex, numbers
 from collections import defaultdict, namedtuple
 from io import BytesIO
 from threading import Thread
 
 from PyQt5.Qt import (
-    QCompleter, QCoreApplication, QDateTime, QDialog, QDialogButtonBox, QFont, QProgressBar,
+    QCompleter, QCoreApplication, QDateTime, QDialog, QDialogButtonBox, QFont, QProgressBar, QComboBox,
     QGridLayout, QInputDialog, QLabel, QLineEdit, QSize, Qt, QVBoxLayout, pyqtSignal, QApplication
 )
 
@@ -26,7 +26,6 @@ from calibre.gui2.custom_column_widgets import populate_metadata_page
 from calibre.gui2.dialogs.metadata_bulk_ui import Ui_MetadataBulkDialog
 from calibre.gui2.dialogs.tag_editor import TagEditor
 from calibre.gui2.dialogs.template_line_editor import TemplateLineEditor
-from calibre.gui2.metadata.basic_widgets import CalendarWidget
 from calibre.utils.config import JSONConfig, dynamic, prefs, tweaks
 from calibre.utils.date import qt_to_dt, internal_iso_format_string
 from calibre.utils.icu import capitalize, sort_key
@@ -109,15 +108,15 @@ class MyBlockingBusy(QDialog):  # {{{
         self.current_step_value = 0
         self._layout.addWidget(self.current_step_pb)
         self._layout.addSpacing(15)
-        self._layout.addWidget(self.msg, 0, Qt.AlignHCenter)
+        self._layout.addWidget(self.msg, 0, Qt.AlignmentFlag.AlignHCenter)
         self.setWindowTitle(window_title + '...')
         self.setMinimumWidth(200)
         self.resize(self.sizeHint())
         self.error = None
-        self.all_done.connect(self.on_all_done, type=Qt.QueuedConnection)
-        self.progress_update.connect(self.on_progress_update, type=Qt.QueuedConnection)
-        self.progress_finished_cur_step.connect(self.on_progress_finished_cur_step, type=Qt.QueuedConnection)
-        self.progress_next_step_range.connect(self.on_progress_next_step_range, type=Qt.QueuedConnection)
+        self.all_done.connect(self.on_all_done, type=Qt.ConnectionType.QueuedConnection)
+        self.progress_update.connect(self.on_progress_update, type=Qt.ConnectionType.QueuedConnection)
+        self.progress_finished_cur_step.connect(self.on_progress_finished_cur_step, type=Qt.ConnectionType.QueuedConnection)
+        self.progress_next_step_range.connect(self.on_progress_next_step_range, type=Qt.ConnectionType.QueuedConnection)
         self.args, self.ids = args, ids
         self.db, self.cc_widgets = db, cc_widgets
         self.s_r_func = FunctionDispatcher(s_r_func)
@@ -369,6 +368,7 @@ class MyBlockingBusy(QDialog):  # {{{
         if args.clear_series:
             self.progress_next_step_range.emit(0)
             cache.set_field('series', {bid: '' for bid in self.ids})
+            cache.set_field('series_index', {bid:1.0 for bid in self.ids})
             self.progress_finished_cur_step.emit()
 
         if args.pubdate is not None:
@@ -482,16 +482,16 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.ids = [self.db.id(r) for r in rows]
         self.first_title = self.db.title(self.ids[0], index_is_id=True)
         self.cover_clone.setToolTip(unicode_type(self.cover_clone.toolTip()) + ' (%s)' % self.first_title)
-        self.box_title.setText('<p>' +
-                _('Editing meta information for <b>%d books</b>') %
-                len(rows))
+        self.setWindowTitle(ngettext(
+            'Editing metadata for one book',
+            'Editing metadata for {} books', len(rows)).format(len(rows)))
         self.write_series = False
         self.changed = False
         self.refresh_books = refresh_books
         self.comments = null
         self.comments_button.clicked.connect(self.set_comments)
 
-        all_tags = self.db.all_tags()
+        all_tags = self.db.new_api.all_field_names('tags')
         self.tags.update_items_cache(all_tags)
         self.remove_tags.update_items_cache(all_tags)
 
@@ -502,9 +502,6 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.series.editTextChanged.connect(self.series_changed)
         self.tag_editor_button.clicked.connect(self.tag_editor)
         self.autonumber_series.stateChanged[int].connect(self.auto_number_changed)
-        self.pubdate.setMinimumDateTime(UNDEFINED_QDATETIME)
-        self.pubdate_cw = CalendarWidget(self.pubdate)
-        self.pubdate.setCalendarWidget(self.pubdate_cw)
         pubdate_format = tweaks['gui_pubdate_display_format']
         if pubdate_format == 'iso':
             pubdate_format = internal_iso_format_string()
@@ -514,9 +511,6 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.clear_pubdate_button.clicked.connect(self.clear_pubdate)
         self.pubdate.dateTimeChanged.connect(self.do_apply_pubdate)
         self.adddate.setDateTime(QDateTime.currentDateTime())
-        self.adddate.setMinimumDateTime(UNDEFINED_QDATETIME)
-        self.adddate_cw = CalendarWidget(self.adddate)
-        self.adddate.setCalendarWidget(self.adddate_cw)
         adddate_format = tweaks['gui_timestamp_display_format']
         if adddate_format == 'iso':
             adddate_format = internal_iso_format_string()
@@ -545,7 +539,7 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.prepare_search_and_replace()
 
         self.button_box.clicked.connect(self.button_clicked)
-        self.button_box.button(QDialogButtonBox.Apply).setToolTip(_(
+        self.button_box.button(QDialogButtonBox.StandardButton.Apply).setToolTip(_(
             'Immediately make all changes without closing the dialog. '
             'This operation cannot be canceled or undone'))
         self.do_again = False
@@ -559,9 +553,8 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.central_widget.setCurrentIndex(ct)
         self.languages.init_langs(self.db)
         self.languages.setEditText('')
-        self.authors.setFocus(Qt.OtherFocusReason)
+        self.authors.setFocus(Qt.FocusReason.OtherFocusReason)
         self.generate_cover_settings = None
-        self.button_config_cover_gen.setVisible(False)
         self.button_config_cover_gen.clicked.connect(self.customize_cover_generation)
         self.exec_()
 
@@ -574,13 +567,13 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
     def customize_cover_generation(self):
         from calibre.gui2.covers import CoverSettingsDialog
         d = CoverSettingsDialog(parent=self)
-        if d.exec_() == d.Accepted:
+        if d.exec_() == QDialog.DialogCode.Accepted:
             self.generate_cover_settings = d.prefs_for_rendering
 
     def set_comments(self):
         from calibre.gui2.dialogs.comments_dialog import CommentsDialog
         d = CommentsDialog(self, '' if self.comments is null else (self.comments or ''), _('Comments'))
-        if d.exec_() == d.Accepted:
+        if d.exec_() == QDialog.DialogCode.Accepted:
             self.comments = d.textbox.html
             b = self.comments_button
             b.setStyleSheet('QPushButton { font-weight: bold }')
@@ -608,7 +601,7 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.adddate.setDateTime(UNDEFINED_QDATETIME)
 
     def button_clicked(self, which):
-        if which == self.button_box.button(QDialogButtonBox.Apply):
+        if which == self.button_box.button(QDialogButtonBox.StandardButton.Apply):
             self.do_again = True
             self.accept()
 
@@ -680,7 +673,7 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
                  'search text. The text is replaced by the specified replacement '
                  'text everywhere it is found in the specified field. After '
                  'replacement is finished, the text can be changed to '
-                 'upper-case, lower-case, or title-case. If the case-sensitive '
+                 'upper-case, lower-case, or title-case. If the Case-sensitive '
                  'check box is checked, the search text must match exactly. If '
                  'it is unchecked, the search text will match both upper- and '
                  'lower-case letters'
@@ -728,9 +721,9 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.s_r_template.lost_focus.connect(self.s_r_template_changed)
         self.central_widget.setCurrentIndex(0)
 
-        self.search_for.completer().setCaseSensitivity(Qt.CaseSensitive)
-        self.replace_with.completer().setCaseSensitivity(Qt.CaseSensitive)
-        self.s_r_template.completer().setCaseSensitivity(Qt.CaseSensitive)
+        self.search_for.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseSensitive)
+        self.replace_with.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseSensitive)
+        self.s_r_template.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseSensitive)
 
         self.s_r_search_mode_changed(self.search_mode.currentIndex())
         self.multiple_separator.setFixedWidth(30)
@@ -980,22 +973,22 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
     def s_r_paint_results(self, txt):
         self.s_r_error = None
         self.s_r_set_colors()
+        flags = regex.FULLCASE | regex.UNICODE
 
-        if self.case_sensitive.isChecked():
-            flags = 0
-        else:
-            flags = re.I
-
-        flags |= re.UNICODE
+        if not self.case_sensitive.isChecked():
+            flags |= regex.IGNORECASE
 
         try:
             stext = unicode_type(self.search_for.text())
             if not stext:
                 raise Exception(_('You must specify a search expression in the "Search for" field'))
             if self.search_mode.currentIndex() == 0:
-                self.s_r_obj = re.compile(re.escape(stext), flags)
+                self.s_r_obj = regex.compile(regex.escape(stext), flags | regex.V1)
             else:
-                self.s_r_obj = re.compile(stext, flags)
+                try:
+                    self.s_r_obj = regex.compile(stext, flags | regex.V1)
+                except regex.error:
+                    self.s_r_obj = regex.compile(stext, flags)
         except Exception as e:
             self.s_r_obj = None
             self.s_r_error = e
@@ -1003,8 +996,11 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
             return
 
         try:
-            self.test_result.setText(self.s_r_obj.sub(self.s_r_func,
-                                     unicode_type(self.test_text.text())))
+            test_result = self.s_r_obj.sub(self.s_r_func, self.test_text.text())
+            if self.search_mode.currentIndex() == 0:
+                rfunc = self.s_r_functions[self.replace_func.currentText()]
+                test_result = rfunc(test_result)
+            self.test_result.setText(test_result)
         except Exception as e:
             self.s_r_error = e
             self.s_r_set_colors()
@@ -1072,7 +1068,7 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
     # }}}
 
     def create_custom_column_editors(self):
-        w = self.central_widget.widget(1)
+        w = self.tab
         layout = QGridLayout()
         self.custom_column_widgets, self.__cc_spacers = \
             populate_metadata_page(layout, self.db, self.ids, parent=w,
@@ -1091,7 +1087,7 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.initialize_publisher()
         for x in ('authors', 'publisher', 'series'):
             x = getattr(self, x)
-            x.setSizeAdjustPolicy(x.AdjustToMinimumContentsLengthWithIcon)
+            x.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             x.setMinimumContentsLength(25)
 
     def initalize_authors(self):
@@ -1101,31 +1097,29 @@ class MetadataBulkDialog(QDialog, Ui_MetadataBulkDialog):
         self.authors.set_separator('&')
         self.authors.set_space_before_sep(True)
         self.authors.set_add_separator(tweaks['authors_completer_append_separator'])
-        self.authors.update_items_cache(self.db.all_author_names())
+        self.authors.update_items_cache(self.db.new_api.all_field_names('authors'))
         self.authors.show_initial_value('')
 
     def initialize_series(self):
-        all_series = self.db.all_series()
-        all_series.sort(key=lambda x : sort_key(x[1]))
         self.series.set_separator(None)
-        self.series.update_items_cache([x[1] for x in all_series])
+        self.series.update_items_cache(self.db.new_api.all_field_names('series'))
         self.series.show_initial_value('')
+        self.publisher.set_add_separator(False)
 
     def initialize_publisher(self):
-        all_publishers = self.db.all_publishers()
-        all_publishers.sort(key=lambda x : sort_key(x[1]))
-        self.publisher.set_separator(None)
-        self.publisher.update_items_cache([x[1] for x in all_publishers])
+        self.publisher.update_items_cache(self.db.new_api.all_field_names('publisher'))
+        self.publisher.set_add_separator(False)
         self.publisher.show_initial_value('')
 
     def tag_editor(self, *args):
         d = TagEditor(self, self.db, None)
         d.exec_()
-        if d.result() == QDialog.Accepted:
+        if d.result() == QDialog.DialogCode.Accepted:
             tag_string = ', '.join(d.tags)
             self.tags.setText(tag_string)
-            self.tags.update_items_cache(self.db.all_tags())
-            self.remove_tags.update_items_cache(self.db.all_tags())
+            all_tags = self.db.new_api.all_field_names('tags')
+            self.tags.update_items_cache(all_tags)
+            self.remove_tags.update_items_cache(all_tags)
 
     def auto_number_changed(self, state):
         self.series_start_number.setEnabled(bool(state))

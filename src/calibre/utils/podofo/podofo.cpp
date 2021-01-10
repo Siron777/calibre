@@ -36,61 +36,30 @@ PyLogMessage log_message;
 
 static char podofo_doc[] = "Wrapper for the PoDoFo PDF library";
 
-static PyMethodDef podofo_methods[] = {
-    {NULL}  /* Sentinel */
-};
-
-#if PY_MAJOR_VERSION >= 3
-#define INITERROR return NULL
-#define INITMODULE PyModule_Create(&podofo_module)
-static struct PyModuleDef podofo_module = {
-    /* m_base     */ PyModuleDef_HEAD_INIT,
-    /* m_name     */ "podofo",
-    /* m_doc      */ podofo_doc,
-    /* m_size     */ -1,
-    /* m_methods  */ podofo_methods,
-    /* m_slots    */ 0,
-    /* m_traverse */ 0,
-    /* m_clear    */ 0,
-    /* m_free     */ 0,
-};
-CALIBRE_MODINIT_FUNC PyInit_podofo(void) {
-#else
-#define INITERROR return
-#define INITMODULE Py_InitModule3("podofo", podofo_methods, podofo_doc)
-CALIBRE_MODINIT_FUNC initpodofo(void) {
-#endif
-
-    PyObject* m;
-
-    if (PyType_Ready(&pdf::PDFDocType) < 0) {
-        INITERROR;
-    }
-
-    if (PyType_Ready(&pdf::PDFOutlineItemType) < 0) {
-        INITERROR;
-    }
+static int
+exec_module(PyObject *m) {
+    if (PyType_Ready(&pdf::PDFDocType) < 0) return -1;
+    if (PyType_Ready(&pdf::PDFOutlineItemType) < 0) return -1;
 
     pdf::Error = PyErr_NewException((char*)"podofo.Error", NULL, NULL);
-    if (pdf::Error == NULL) {
-        INITERROR;
-    }
+    if (pdf::Error == NULL) return -1;
+    PyModule_AddObject(m, "Error", pdf::Error);
 
     PdfError::SetLogMessageCallback((PdfError::LogMessageCallback*)&log_message);
-
     PdfError::EnableDebug(false);
-
-    m = INITMODULE;
-    if (m == NULL) {
-        INITERROR;
-    }
 
     Py_INCREF(&pdf::PDFDocType);
     PyModule_AddObject(m, "PDFDoc", (PyObject *)&pdf::PDFDocType);
+	return 0;
+}
 
-    PyModule_AddObject(m, "Error", pdf::Error);
+static PyModuleDef_Slot slots[] = { {Py_mod_exec, (void*)exec_module}, {0, NULL} };
 
-#if PY_MAJOR_VERSION >= 3
-    return m;
-#endif
+static struct PyModuleDef module_def = {PyModuleDef_HEAD_INIT};
+
+CALIBRE_MODINIT_FUNC PyInit_podofo(void) {
+	module_def.m_name = "podofo";
+	module_def.m_doc = podofo_doc;
+	module_def.m_slots = slots;
+	return PyModuleDef_Init(&module_def);
 }

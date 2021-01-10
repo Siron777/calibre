@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>, 2012 Eli Algranti <idea00@hotmail.com>'
@@ -48,7 +48,7 @@ class SearchAndReplaceWidget(Widget, Ui_Form):
         self.sr_search.doc_update.connect(self.update_doc)
 
         proto = QTableWidgetItem()
-        proto.setFlags(Qt.ItemFlags(Qt.ItemIsSelectable + Qt.ItemIsEnabled))
+        proto.setFlags(Qt.ItemFlags(Qt.ItemFlag.ItemIsSelectable + Qt.ItemFlag.ItemIsEnabled))
         self.search_replace.setItemPrototype(proto)
         self.search_replace.setColumnCount(2)
         self.search_replace.setColumnWidth(0, 320)
@@ -103,6 +103,7 @@ class SearchAndReplaceWidget(Widget, Ui_Form):
             self.search_replace.setCurrentCell(row if row < self.search_replace.rowCount() else row-1, 0)
             self.sr_search.clear()
             self.sr_replace.clear()
+            self.changed_signal.emit()
 
     def sr_load_clicked(self):
         files = choose_files(self, 'sr_saved_patterns',

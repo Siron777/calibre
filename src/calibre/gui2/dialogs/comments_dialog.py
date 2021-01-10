@@ -1,5 +1,5 @@
-#!/usr/bin/env python2
-from __future__ import absolute_import, division, print_function, unicode_literals
+#!/usr/bin/env python
+
 
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -21,14 +21,14 @@ class CommentsDialog(QDialog, Ui_CommentsDialog):
         self.setupUi(self)
         # Remove help icon on title bar
         icon = self.windowIcon()
-        self.setWindowFlags(self.windowFlags()&(~Qt.WindowContextHelpButtonHint))
+        self.setWindowFlags(self.windowFlags()&(~Qt.WindowType.WindowContextHelpButtonHint))
         self.setWindowIcon(icon)
 
         self.textbox.html = comments_to_html(text) if text else ''
         self.textbox.wyswyg_dirtied()
         # self.textbox.setTabChangesFocus(True)
-        self.buttonBox.button(QDialogButtonBox.Ok).setText(_('O&K'))
-        self.buttonBox.button(QDialogButtonBox.Cancel).setText(_('&Cancel'))
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText(_('O&K'))
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText(_('&Cancel'))
 
         if column_name:
             self.setWindowTitle(_('Edit "{0}"').format(column_name))

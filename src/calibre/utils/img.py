@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015-2019, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 import errno
 import os
@@ -10,26 +10,24 @@ import subprocess
 import sys
 import tempfile
 from io import BytesIO
+# We use explicit module imports so tracebacks when importing are more useful
+from PyQt5.QtCore import QBuffer, QByteArray, Qt, QIODevice
+from PyQt5.QtGui import (
+    QColor, QImage, QImageReader, QImageWriter, QPixmap, QTransform
+)
 from threading import Thread
 
-# We use explicit module imports so tracebacks when importing are more useful
-from PyQt5.QtCore import QBuffer, QByteArray, Qt
-from PyQt5.QtGui import QColor, QImage, QImageReader, QImageWriter, QPixmap, QTransform
-
 from calibre import fit_image, force_unicode
-from calibre.constants import iswindows, plugins, ispy3
+from calibre.constants import iswindows
 from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.config_base import tweaks
 from calibre.utils.filenames import atomic_rename
 from calibre.utils.imghdr import what
+from calibre_extensions import imageops
 from polyglot.builtins import string_or_bytes, unicode_type
 
+
 # Utilities {{{
-imageops, imageops_err = plugins['imageops']
-if imageops is None:
-    raise RuntimeError(imageops_err)
-
-
 class NotImage(ValueError):
     pass
 
@@ -53,17 +51,57 @@ def get_exe_path(name):
 
 def load_jxr_data(data):
     with TemporaryDirectory() as tdir:
-        if iswindows and isinstance(tdir, unicode_type):
-            tdir = tdir.encode('mbcs')
+        if isinstance(tdir, bytes):
+            tdir = os.fsdecode(tdir)
         with lopen(os.path.join(tdir, 'input.jxr'), 'wb') as f:
             f.write(data)
         cmd = [get_exe_path('JxrDecApp'), '-i', 'input.jxr', '-o', 'output.tif']
-        creationflags = 0x08 if iswindows else 0
+        creationflags = subprocess.DETACHED_PROCESS if iswindows else 0
         subprocess.Popen(cmd, cwd=tdir, stdout=lopen(os.devnull, 'wb'), stderr=subprocess.STDOUT, creationflags=creationflags).wait()
         i = QImage()
         if not i.load(os.path.join(tdir, 'output.tif')):
             raise NotImage('Failed to convert JPEG-XR image')
         return i
+
+# }}}
+
+# png <-> gif {{{
+
+
+def png_data_to_gif_data(data):
+    from PIL import Image
+    img = Image.open(BytesIO(data))
+    buf = BytesIO()
+    if img.mode in ('p', 'P'):
+        transparency = img.info.get('transparency')
+        if transparency is not None:
+            img.save(buf, 'gif', transparency=transparency)
+        else:
+            img.save(buf, 'gif')
+    elif img.mode in ('rgba', 'RGBA'):
+        alpha = img.split()[3]
+        mask = Image.eval(alpha, lambda a: 255 if a <=128 else 0)
+        img = img.convert('RGB').convert('P', palette=Image.ADAPTIVE, colors=255)
+        img.paste(255, mask)
+        img.save(buf, 'gif', transparency=255)
+    else:
+        img = img.convert('P', palette=Image.ADAPTIVE)
+        img.save(buf, 'gif')
+    return buf.getvalue()
+
+
+class AnimatedGIF(ValueError):
+    pass
+
+
+def gif_data_to_png_data(data, discard_animation=False):
+    from PIL import Image
+    img = Image.open(BytesIO(data))
+    if img.is_animated and not discard_animation:
+        raise AnimatedGIF()
+    buf = BytesIO()
+    img.save(buf, 'png')
+    return buf.getvalue()
 
 # }}}
 
@@ -113,7 +151,7 @@ def image_and_format_from_data(data):
     ' Create an image object from the specified data which should be a bytestring and also return the format of the image '
     ba = QByteArray(data)
     buf = QBuffer(ba)
-    buf.open(QBuffer.ReadOnly)
+    buf.open(QIODevice.OpenModeFlag.ReadOnly)
     r = QImageReader(buf)
     fmt = bytes(r.format()).decode('utf-8')
     return r.read(), fmt
@@ -134,17 +172,13 @@ def image_to_data(img, compression_quality=95, fmt='JPEG', png_compression_level
     fmt = fmt.upper()
     ba = QByteArray()
     buf = QBuffer(ba)
-    buf.open(QBuffer.WriteOnly)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
     if fmt == 'GIF':
         w = QImageWriter(buf, b'PNG')
         w.setQuality(90)
         if not w.write(img):
             raise ValueError('Failed to export image as ' + fmt + ' with error: ' + w.errorString())
-        from PIL import Image
-        im = Image.open(BytesIO(ba.data()))
-        buf = BytesIO()
-        im.save(buf, 'gif')
-        return buf.getvalue()
+        return png_data_to_gif_data(ba.data())
     is_jpeg = fmt in ('JPG', 'JPEG')
     w = QImageWriter(buf, fmt.encode('ascii'))
     if is_jpeg:
@@ -220,7 +254,7 @@ def save_cover_data_to(
         changed = fmt != orig_fmt
     if resize_to is not None:
         changed = True
-        img = img.scaled(resize_to[0], resize_to[1], Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        img = img.scaled(resize_to[0], resize_to[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     owidth, oheight = img.width(), img.height()
     nwidth, nheight = tweaks['maximum_cover_size'] if minify_to is None else minify_to
     if letterbox:
@@ -232,7 +266,7 @@ def save_cover_data_to(
         scaled, nwidth, nheight = fit_image(owidth, oheight, nwidth, nheight)
         if scaled:
             changed = True
-            img = img.scaled(nwidth, nheight, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            img = img.scaled(nwidth, nheight, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     if img.hasAlphaChannel():
         changed = True
         img = blend_image(img, bgcolor)
@@ -259,9 +293,9 @@ def blend_on_canvas(img, width, height, bgcolor='#ffffff'):
     w, h = img.width(), img.height()
     scaled, nw, nh = fit_image(w, h, width, height)
     if scaled:
-        img = img.scaled(nw, nh, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        img = img.scaled(nw, nh, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
         w, h = nw, nh
-    canvas = QImage(width, height, QImage.Format_RGB32)
+    canvas = QImage(width, height, QImage.Format.Format_RGB32)
     canvas.fill(QColor(bgcolor))
     overlay_image(img, canvas, (width - w)//2, (height - h)//2)
     return canvas
@@ -270,7 +304,7 @@ def blend_on_canvas(img, width, height, bgcolor='#ffffff'):
 class Canvas(object):
 
     def __init__(self, width, height, bgcolor='#ffffff'):
-        self.img = QImage(width, height, QImage.Format_RGB32)
+        self.img = QImage(width, height, QImage.Format.Format_RGB32)
         self.img.fill(QColor(bgcolor))
 
     def __enter__(self):
@@ -289,7 +323,7 @@ class Canvas(object):
 
 def create_canvas(width, height, bgcolor='#ffffff'):
     'Create a blank canvas of the specified size and color '
-    img = QImage(width, height, QImage.Format_RGB32)
+    img = QImage(width, height, QImage.Format.Format_RGB32)
     img.fill(QColor(bgcolor))
     return img
 
@@ -297,8 +331,8 @@ def create_canvas(width, height, bgcolor='#ffffff'):
 def overlay_image(img, canvas=None, left=0, top=0):
     ' Overlay the `img` onto the canvas at the specified position '
     if canvas is None:
-        canvas = QImage(img.size(), QImage.Format_RGB32)
-        canvas.fill(Qt.white)
+        canvas = QImage(img.size(), QImage.Format.Format_RGB32)
+        canvas.fill(Qt.GlobalColor.white)
     left, top = int(left), int(top)
     imageops.overlay(img, canvas, left, top)
     return canvas
@@ -313,7 +347,7 @@ def texture_image(canvas, texture):
 
 def blend_image(img, bgcolor='#ffffff'):
     ' Used to convert images that have semi-transparent pixels to opaque by blending with the specified color '
-    canvas = QImage(img.size(), QImage.Format_RGB32)
+    canvas = QImage(img.size(), QImage.Format.Format_RGB32)
     canvas.fill(QColor(bgcolor))
     overlay_image(img, canvas)
     return canvas
@@ -326,7 +360,7 @@ def add_borders_to_image(img, left=0, top=0, right=0, bottom=0, border_color='#f
     img = image_from_data(img)
     if not (left > 0 or right > 0 or top > 0 or bottom > 0):
         return img
-    canvas = QImage(img.width() + left + right, img.height() + top + bottom, QImage.Format_RGB32)
+    canvas = QImage(img.width() + left + right, img.height() + top + bottom, QImage.Format.Format_RGB32)
     canvas.fill(QColor(border_color))
     overlay_image(img, canvas, left, top)
     return canvas
@@ -347,7 +381,7 @@ def remove_borders_from_image(img, fuzz=None):
 
 
 def resize_image(img, width, height):
-    return img.scaled(int(width), int(height), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    return img.scaled(int(width), int(height), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
 
 def resize_to_fit(img, width, height):
@@ -374,10 +408,10 @@ def scale_image(data, width=60, height=80, compression_quality=70, as_png=False,
     if preserve_aspect_ratio:
         scaled, nwidth, nheight = fit_image(img.width(), img.height(), width, height)
         if scaled:
-            img = img.scaled(nwidth, nheight, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            img = img.scaled(nwidth, nheight, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
     else:
         if img.width() != width or img.height() != height:
-            img = img.scaled(width, height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            img = img.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     fmt = 'PNG' if as_png else 'JPEG'
     w, h = img.width(), img.height()
     return w, h, image_to_data(img, compression_quality=compression_quality, fmt=fmt)
@@ -506,16 +540,9 @@ def run_optimizer(file_path, cmd, as_filter=False, input_data=None):
             cmd[cmd.index(q)] = r
         if not as_filter:
             repl(True, iname), repl(False, oname)
-        if iswindows and not ispy3:
-            # subprocess in python 2 cannot handle unicode strings that are not
-            # encodeable in mbcs, so we fail here, where it is more explicit,
-            # instead.
-            cmd = [x.encode('mbcs') if isinstance(x, unicode_type) else x for x in cmd]
-            if isinstance(cwd, unicode_type):
-                cwd = cwd.encode('mbcs')
         stdin = subprocess.PIPE if as_filter else None
         stderr = subprocess.PIPE if as_filter else subprocess.STDOUT
-        creationflags = 0x08 if iswindows else 0
+        creationflags = subprocess.DETACHED_PROCESS if iswindows else 0
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=stderr, stdin=stdin, creationflags=creationflags)
         stderr = p.stderr if as_filter else p.stdout
         if as_filter:
@@ -582,7 +609,7 @@ def encode_jpeg(file_path, quality=80):
         raise ValueError('%s is not a valid image file' % file_path)
     ba = QByteArray()
     buf = QBuffer(ba)
-    buf.open(QBuffer.WriteOnly)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
     if not img.save(buf, 'PPM'):
         raise ValueError('Failed to export image to PPM')
     return run_optimizer(file_path, cmd, as_filter=True, input_data=ReadOnlyFileBuffer(ba.data()))
@@ -590,9 +617,10 @@ def encode_jpeg(file_path, quality=80):
 
 
 def test():  # {{{
-    from calibre.ptempfile import TemporaryDirectory
-    from calibre import CurrentDir
     from glob import glob
+
+    from calibre import CurrentDir
+    from calibre.ptempfile import TemporaryDirectory
     img = image_from_data(I('lt.png', data=True, allow_user_override=False))
     with TemporaryDirectory() as tdir, CurrentDir(tdir):
         save_image(img, 'test.jpg')
@@ -615,7 +643,9 @@ def test():  # {{{
     despeckle_image(img)
     remove_borders_from_image(img)
     image_to_data(img, fmt='GIF')
-    raw = subprocess.Popen([get_exe_path('JxrDecApp'), '-h'], creationflags=0x08 if iswindows else 0, stdout=subprocess.PIPE).stdout.read()
+    raw = subprocess.Popen([get_exe_path('JxrDecApp'), '-h'],
+                           creationflags=subprocess.DETACHED_PROCESS if iswindows else 0,
+                           stdout=subprocess.PIPE).stdout.read()
     if b'JPEG XR Decoder Utility' not in raw:
         raise SystemExit('Failed to run JxrDecApp')
 # }}}

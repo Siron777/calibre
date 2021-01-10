@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -186,7 +186,7 @@ foo(int x) {\
             ('S', '\n'), ('IDENT', 'Ipsum')]),
 
         # Cancel the meaning of special characters
-        (r'"Lore\m Ipsum"', [('STRING', 'Lorem Ipsum')]),  # or not specal
+        (r'"Lore\m Ipsum"', [('STRING', 'Lorem Ipsum')]),  # or not special
         (r'"Lorem \49psum"', [('STRING', 'Lorem Ipsum')]),
         (r'"Lorem \49 psum"', [('STRING', 'Lorem Ipsum')]),
         (r'"Lorem\"Ipsum"', [('STRING', 'Lorem"Ipsum')]),

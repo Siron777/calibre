@@ -1,12 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from PyQt5.Qt import Qt, QAbstractListModel, QModelIndex
+from PyQt5.Qt import Qt, QAbstractListModel, QModelIndex, QItemSelectionModel
 
 from calibre.gui2.convert.page_setup_ui import Ui_Form
 from calibre.gui2.convert import Widget
@@ -26,9 +26,11 @@ class ProfileModel(QAbstractListModel):
 
     def data(self, index, role):
         profile = self.profiles[index.row()]
-        if role == Qt.DisplayRole:
-            return (profile.name)
-        if role in (Qt.ToolTipRole, Qt.StatusTipRole, Qt.WhatsThisRole):
+        if role == Qt.ItemDataRole.DisplayRole:
+            if profile.name.startswith('Default '):
+                return _('Default profile')
+            return profile.name
+        if role in (Qt.ItemDataRole.ToolTipRole, Qt.ItemDataRole.StatusTipRole, Qt.ItemDataRole.WhatsThisRole):
             w, h = profile.screen_size
             if w >= 10000:
                 ss = _('unlimited')
@@ -67,7 +69,7 @@ class PageSetupWidget(Widget, Ui_Form):
         self.opt_output_profile.setToolTip('<p>'+it.replace('t.','ce.\n<br>'))
 
     def show_desc(self, index):
-        desc = unicode_type(index.model().data(index, Qt.StatusTipRole) or '')
+        desc = unicode_type(index.model().data(index, Qt.ItemDataRole.StatusTipRole) or '')
         self.profile_description.setText(desc)
 
     def connect_gui_obj_handler(self, g, slot):
@@ -84,7 +86,7 @@ class PageSetupWidget(Widget, Ui_Form):
             idx = g.model().index(idx)
             sm = g.selectionModel()
             g.setCurrentIndex(idx)
-            sm.select(idx, sm.SelectCurrent)
+            sm.select(idx, QItemSelectionModel.SelectionFlag.SelectCurrent)
             return True
         return False
 

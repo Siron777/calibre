@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -9,7 +9,7 @@ from calibre import guess_type
 from calibre.customize import (FileTypePlugin, MetadataReaderPlugin,
     MetadataWriterPlugin, PreferencesPlugin, InterfaceActionBase, StoreBase)
 from calibre.constants import numeric_version
-from calibre.ebooks.metadata.archive import ArchiveExtract, get_comic_metadata
+from calibre.ebooks.metadata.archive import ArchiveExtract, KPFExtract, get_comic_metadata
 from calibre.ebooks.html.to_zip import HTML2ZIP
 
 plugins = []
@@ -124,7 +124,7 @@ class TXT2TXTZ(FileTypePlugin):
             return path_to_ebook
 
 
-plugins += [HTML2ZIP, PML2PMLZ, TXT2TXTZ, ArchiveExtract,]
+plugins += [HTML2ZIP, PML2PMLZ, TXT2TXTZ, ArchiveExtract, KPFExtract]
 # }}}
 
 # Metadata reader plugins {{{
@@ -829,12 +829,10 @@ from calibre.ebooks.metadata.sources.amazon import Amazon
 from calibre.ebooks.metadata.sources.edelweiss import Edelweiss
 from calibre.ebooks.metadata.sources.openlibrary import OpenLibrary
 from calibre.ebooks.metadata.sources.overdrive import OverDrive
-from calibre.ebooks.metadata.sources.douban import Douban
-from calibre.ebooks.metadata.sources.ozon import Ozon
 from calibre.ebooks.metadata.sources.google_images import GoogleImages
 from calibre.ebooks.metadata.sources.big_book_search import BigBookSearch
 
-plugins += [GoogleBooks, GoogleImages, Amazon, Edelweiss, OpenLibrary, OverDrive, Douban, Ozon, BigBookSearch]
+plugins += [GoogleBooks, GoogleImages, Amazon, Edelweiss, OpenLibrary, OverDrive, BigBookSearch]
 
 # }}}
 
@@ -869,6 +867,12 @@ class ActionPolish(InterfaceActionBase):
     name = 'Polish Books'
     actual_plugin = 'calibre.gui2.actions.polish:PolishAction'
     description = _('Fine tune your e-books')
+
+
+class ActionBrowseAnnotations(InterfaceActionBase):
+    name = 'Browse Annotations'
+    actual_plugin = 'calibre.gui2.actions.browse_annots:BrowseAnnotationsAction'
+    description = _('Browse highlights and bookmarks from all books in the library')
 
 
 class ActionEditToC(InterfaceActionBase):
@@ -929,6 +933,12 @@ class ActionTemplateTester(InterfaceActionBase):
     name = 'Template Tester'
     actual_plugin = 'calibre.gui2.actions.show_template_tester:ShowTemplateTesterAction'
     description = _('Show an editor for testing templates')
+
+
+class ActionTemplateFunctions(InterfaceActionBase):
+    name = 'Template Functions'
+    actual_plugin = 'calibre.gui2.actions.show_stored_templates:ShowTemplateFunctionsAction'
+    description = _('Show a dialog for creating and managing template functions and stored templates')
 
 
 class ActionSaveToDisk(InterfaceActionBase):
@@ -1012,6 +1022,12 @@ class ActionMatchBooks(InterfaceActionBase):
     description = _('Match book on the devices to books in the library')
 
 
+class ActionShowMatchedBooks(InterfaceActionBase):
+    name = 'Show Matched Book In Library'
+    actual_plugin = 'calibre.gui2.actions.match_books:ShowMatchedBookAction'
+    description = _('Show the book in the calibre library that matches this book')
+
+
 class ActionCopyToLibrary(InterfaceActionBase):
     name = 'Copy To Library'
     actual_plugin = 'calibre.gui2.actions.copy_to_library:CopyToLibraryAction'
@@ -1091,11 +1107,11 @@ plugins += [ActionAdd, ActionFetchAnnotations, ActionGenerateCatalog,
         ActionFetchNews, ActionSaveToDisk, ActionQuickview, ActionPolish,
         ActionShowBookDetails,ActionRestart, ActionOpenFolder, ActionConnectShare,
         ActionSendToDevice, ActionHelp, ActionPreferences, ActionSimilarBooks,
-        ActionAddToLibrary, ActionEditCollections, ActionMatchBooks, ActionChooseLibrary,
+        ActionAddToLibrary, ActionEditCollections, ActionMatchBooks, ActionShowMatchedBooks, ActionChooseLibrary,
         ActionCopyToLibrary, ActionTweakEpub, ActionUnpackBook, ActionNextMatch, ActionStore,
         ActionPluginUpdater, ActionPickRandom, ActionEditToC, ActionSortBy,
         ActionMarkBooks, ActionEmbed, ActionTemplateTester, ActionTagMapper, ActionAuthorMapper,
-        ActionVirtualLibrary]
+        ActionVirtualLibrary, ActionBrowseAnnotations, ActionTemplateFunctions]
 
 # }}}
 
@@ -1738,15 +1754,6 @@ class StoreNextoStore(StoreBase):
     affiliate = True
 
 
-class StoreOpenBooksStore(StoreBase):
-    name = 'Open Books'
-    description = 'Comprehensive listing of DRM free e-books from a variety of sources provided by users of calibre.'
-    actual_plugin = 'calibre.gui2.store.stores.open_books_plugin:OpenBooksStore'
-
-    drm_free_only = True
-    headquarters = 'US'
-
-
 class StoreOzonRUStore(StoreBase):
     name = 'OZON.ru'
     description = 'e-books from OZON.ru'
@@ -1910,7 +1917,6 @@ plugins += [
     StoreMillsBoonUKStore,
     StoreMobileReadStore,
     StoreNextoStore,
-    StoreOpenBooksStore,
     StoreOzonRUStore,
     StorePragmaticBookshelfStore,
     StorePublioStore,
@@ -1955,7 +1961,6 @@ if __name__ == '__main__':
     try:
         subprocess.check_call(['python', '-c', textwrap.dedent(
         '''
-        from __future__ import print_function
         import time, sys, init_calibre
         st = time.time()
         import calibre.customize.builtins

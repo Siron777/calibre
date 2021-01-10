@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 # License: GPLv3 Copyright: 2013, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 import json
 
@@ -33,9 +33,9 @@ class Page(QWebEnginePage):  # {{{
         self.loadFinished.connect(self.show_frag)
         s = QWebEngineScript()
         s.setName('toc.js')
-        s.setInjectionPoint(QWebEngineScript.DocumentReady)
+        s.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
         s.setRunsOnSubFrames(True)
-        s.setWorldId(QWebEngineScript.ApplicationWorld)
+        s.setWorldId(QWebEngineScript.ScriptWorldId.ApplicationWorld)
         s.setSourceCode(P('toc.js', allow_user_override=False, data=True).decode('utf-8').replace('COM_ID', self.com_id))
         self.scripts().insert(s)
 
@@ -50,7 +50,7 @@ class Page(QWebEnginePage):  # {{{
         if len(parts) == 2 and parts[0] == self.com_id:
             self.runJavaScript(
                 'JSON.stringify(window.calibre_toc_data)',
-                QWebEngineScript.ApplicationWorld, self.onclick)
+                QWebEngineScript.ScriptWorldId.ApplicationWorld, self.onclick)
 
     def onclick(self, data):
         try:
@@ -67,7 +67,7 @@ class Page(QWebEnginePage):  # {{{
                 document.location = '#' + {0};
             '''.format(json.dumps(self.current_frag)))
             self.current_frag = None
-            self.runJavaScript('window.pageYOffset/document.body.scrollHeight', QWebEngineScript.ApplicationWorld, self.frag_shown.emit)
+            self.runJavaScript('window.pageYOffset/document.body.scrollHeight', QWebEngineScript.ScriptWorldId.ApplicationWorld, self.frag_shown.emit)
 
 # }}}
 
@@ -89,7 +89,10 @@ class WebView(QWebEngineView):  # {{{
         self.setUrl(QUrl.fromLocalFile(path))
 
     def sizeHint(self):
-        return QSize(1500, 300)
+        return QSize(300, 300)
+
+    def contextMenuEvent(self, ev):
+        pass
 # }}}
 
 
@@ -121,8 +124,8 @@ class ItemEdit(QWidget):
         w.setLayout(l)
         self.view = WebView(self)
         self.view.elem_clicked.connect(self.elem_clicked)
-        self.view.frag_shown.connect(self.update_dest_label, type=Qt.QueuedConnection)
-        self.view.loadFinished.connect(self.load_finished, type=Qt.QueuedConnection)
+        self.view.frag_shown.connect(self.update_dest_label, type=Qt.ConnectionType.QueuedConnection)
+        self.view.loadFinished.connect(self.load_finished, type=Qt.ConnectionType.QueuedConnection)
         l.addWidget(self.view, 0, 0, 1, 3)
         sp.addWidget(w)
 
@@ -137,7 +140,7 @@ class ItemEdit(QWidget):
         b.clicked.connect(self.find_previous)
 
         self.f = f = QFrame()
-        f.setFrameShape(f.StyledPanel)
+        f.setFrameShape(QFrame.Shape.StyledPanel)
         f.setMinimumWidth(250)
         l = f.l = QVBoxLayout()
         f.setLayout(l)
@@ -160,6 +163,7 @@ class ItemEdit(QWidget):
         f.la2 = la = QLabel('<b>'+_('&Name of the ToC entry:'))
         l.addWidget(la)
         self.name = QLineEdit(self)
+        self.name.setPlaceholderText(_('(Untitled)'))
         la.setBuddy(self.name)
         l.addWidget(self.name)
 
@@ -181,7 +185,7 @@ class ItemEdit(QWidget):
         self.pending_search = None
 
     def keyPressEvent(self, ev):
-        if ev.key() in (Qt.Key_Return, Qt.Key_Enter) and self.search_text.hasFocus():
+        if ev.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.search_text.hasFocus():
             # Prevent pressing enter in the search box from triggering the dialog's accept() method
             ev.accept()
             return
@@ -189,7 +193,7 @@ class ItemEdit(QWidget):
 
     def find(self, forwards=True):
         text = unicode_type(self.search_text.text()).strip()
-        flags = QWebEnginePage.FindFlags(0) if forwards else QWebEnginePage.FindBackward
+        flags = QWebEnginePage.FindFlags(0) if forwards else QWebEnginePage.FindFlag.FindBackward
         self.find_data = text, flags, forwards
         self.view.findText(text, flags, self.find_callback)
 
@@ -202,9 +206,9 @@ class ItemEdit(QWidget):
                     _('No match found for: %s')%text, show=True)
 
             delta = 1 if forwards else -1
-            current = unicode_type(d.currentItem().data(Qt.DisplayRole) or '')
+            current = unicode_type(d.currentItem().data(Qt.ItemDataRole.DisplayRole) or '')
             next_index = (d.currentRow() + delta)%d.count()
-            next = unicode_type(d.item(next_index).data(Qt.DisplayRole) or '')
+            next = unicode_type(d.item(next_index).data(Qt.ItemDataRole.DisplayRole) or '')
             msg = '<p>'+_('No matches for %(text)s found in the current file [%(current)s].'
                           ' Do you want to search in the %(which)s file [%(next)s]?')
             msg = msg%dict(text=text, current=current, next=next,
@@ -227,7 +231,7 @@ class ItemEdit(QWidget):
         self.dest_list.addItems(spine_names)
 
     def current_changed(self, item):
-        name = self.current_name = unicode_type(item.data(Qt.DisplayRole) or '')
+        name = self.current_name = unicode_type(item.data(Qt.ItemDataRole.DisplayRole) or '')
         path = self.container.name_to_abspath(name)
         # Ensure encoding map is populated
         root = self.container.parsed(name)
@@ -249,17 +253,17 @@ class ItemEdit(QWidget):
         self.current_item, self.current_where = item, where
         self.current_name = None
         self.current_frag = None
-        self.name.setText(_('(Untitled)'))
+        self.name.setText('')
         dest_index, frag = 0, None
         if item is not None:
             if where is None:
-                self.name.setText(item.data(0, Qt.DisplayRole) or '')
+                self.name.setText(item.data(0, Qt.ItemDataRole.DisplayRole) or '')
                 self.name.setCursorPosition(0)
-            toc = item.data(0, Qt.UserRole)
+            toc = item.data(0, Qt.ItemDataRole.UserRole)
             if toc.dest:
                 for i in range(self.dest_list.count()):
                     litem = self.dest_list.item(i)
-                    if unicode_type(litem.data(Qt.DisplayRole) or '') == toc.dest:
+                    if unicode_type(litem.data(Qt.ItemDataRole.DisplayRole) or '') == toc.dest:
                         dest_index = i
                         frag = toc.frag
                         break
@@ -295,4 +299,4 @@ class ItemEdit(QWidget):
     @property
     def result(self):
         return (self.current_item, self.current_where, self.current_name,
-                self.current_frag, unicode_type(self.name.text()))
+                self.current_frag, self.name.text().strip() or _('(Untitled)'))

@@ -1,4 +1,4 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -10,7 +10,7 @@ from threading import Thread, Event
 from PyQt5.Qt import (
     QMenu, QAction, QActionGroup, QIcon, Qt, pyqtSignal, QDialog,
     QObject, QVBoxLayout, QDialogButtonBox, QCursor, QCoreApplication,
-    QApplication, QEventLoop)
+    QApplication, QEventLoop, QTimer)
 
 from calibre.customize.ui import (available_input_formats, available_output_formats,
     device_plugins, disabled_device_plugins)
@@ -59,8 +59,7 @@ class DeviceJob(BaseJob):  # {{{
 
     def start_work(self):
         if DEBUG:
-            prints('Job:', self.id, self.description, 'started',
-                safe_encode=True)
+            prints('Job:', self.id, self.description, 'started')
         self.start_time = time.time()
         self.job_manager.changed_queue.put(self)
 
@@ -69,7 +68,7 @@ class DeviceJob(BaseJob):  # {{{
         self.percent = 1
         if DEBUG:
             prints('DeviceJob:', self.id, self.description,
-                    'done, calling callback', safe_encode=True)
+                    'done, calling callback')
 
         try:
             self.callback_on_done(self)
@@ -77,7 +76,7 @@ class DeviceJob(BaseJob):  # {{{
             pass
         if DEBUG:
             prints('DeviceJob:', self.id, self.description,
-                    'callback returned', safe_encode=True)
+                    'callback returned')
         self.job_manager.changed_queue.put(self)
 
     def report_progress(self, percent, msg=''):
@@ -129,7 +128,7 @@ def device_name_for_plugboards(device_class):
 class BusyCursor(object):
 
     def __enter__(self):
-        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
 
     def __exit__(self, *args):
         QApplication.restoreOverrideCursor()
@@ -894,7 +893,7 @@ class DeviceMixin(object):  # {{{
     def init_device_mixin(self):
         self.device_error_dialog = error_dialog(self, _('Error'),
                 _('Error communicating with device'), ' ')
-        self.device_error_dialog.setModal(Qt.NonModal)
+        self.device_error_dialog.setModal(Qt.WindowModality.NonModal)
         self.device_manager = DeviceManager(FunctionDispatcher(self.device_detected),
                 self.job_manager, Dispatcher(self.status_bar.show_message),
                 Dispatcher(self.show_open_feedback),
@@ -974,7 +973,7 @@ class DeviceMixin(object):  # {{{
         config_dialog.setWindowIcon(QIcon(I('config.png')))
         l = QVBoxLayout(config_dialog)
         config_dialog.setLayout(l)
-        bb = QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(config_dialog.accept)
         bb.rejected.connect(config_dialog.reject)
         l.addWidget(cw)
@@ -987,7 +986,7 @@ class DeviceMixin(object):  # {{{
             if cw.validate():
                 QDialog.accept(config_dialog)
         config_dialog.accept = validate
-        if config_dialog.exec_() == config_dialog.Accepted:
+        if config_dialog.exec_() == QDialog.DialogCode.Accepted:
             dev.save_settings(cw)
 
             do_restart = show_restart_warning(_('Restart calibre for the changes to %s'
@@ -1101,7 +1100,12 @@ class DeviceMixin(object):  # {{{
             # Empty any device view information
             for v in dviews:
                 v.set_database([])
-            self.refresh_ondevice()
+            # Use a singleShot timer to ensure that the job event queue has
+            # emptied before the ondevice column is removed from the booklist.
+            # This deals with race conditions when repainting the booklist
+            # causing incorrect evaluation of the connected_device_name
+            # formatter function
+            QTimer.singleShot(0, self.refresh_ondevice)
         device_signals.device_connection_changed.emit(connected)
 
     def info_read(self, job):
@@ -1255,7 +1259,7 @@ class DeviceMixin(object):  # {{{
                 elif f in aval_out_formats:
                     formats.append((f, _('0 of %i books') % len(rows), True))
             d = ChooseFormatDeviceDialog(self, _('Choose format to send to device'), formats)
-            if d.exec_() != QDialog.Accepted:
+            if d.exec_() != QDialog.DialogCode.Accepted:
                 return
             if d.format():
                 fmt = d.format().lower()
@@ -1348,12 +1352,12 @@ class DeviceMixin(object):  # {{{
                 return
             metadata = self.library_view.model().metadata_for(ids)
             names = []
-            for mi in metadata:
+            for book_id, mi in zip(ids, metadata):
                 prefix = ascii_filename(mi.title)
                 if not isinstance(prefix, unicode_type):
                     prefix = prefix.decode(preferred_encoding, 'replace')
                 prefix = ascii_filename(prefix)
-                names.append('%s_%d%s'%(prefix, id,
+                names.append('%s_%d%s'%(prefix, book_id,
                     os.path.splitext(files[-1])[1]))
                 self.update_thumbnail(mi)
             dynamic.set('catalogs_to_be_synced', set())
@@ -1373,7 +1377,7 @@ class DeviceMixin(object):  # {{{
         'Set of ids to be sent to device'
         ans = []
         try:
-            ans = self.library_view.model().db.prefs.get('news_to_be_synced',
+            ans = self.library_view.model().db.new_api.pref('news_to_be_synced',
                     [])
         except:
             import traceback
@@ -1564,7 +1568,7 @@ class DeviceMixin(object):  # {{{
         '''
         Upload metadata to device.
         '''
-        plugboards = self.library_view.model().db.prefs.get('plugboards', {})
+        plugboards = self.library_view.model().db.new_api.pref('plugboards', {})
         self.device_manager.sync_booklists(Dispatcher(lambda x: x),
                                            self.booklists(), plugboards)
 
@@ -1572,7 +1576,7 @@ class DeviceMixin(object):  # {{{
         '''
         Upload metadata to device.
         '''
-        plugboards = self.library_view.model().db.prefs.get('plugboards', {})
+        plugboards = self.library_view.model().db.new_api.pref('plugboards', {})
         self.device_manager.sync_booklists(FunctionDispatcher(self.metadata_synced),
                                            self.booklists(), plugboards,
                                            add_as_step_to_job=add_as_step_to_job)
@@ -1612,7 +1616,7 @@ class DeviceMixin(object):  # {{{
         :param files: List of either paths to files or file like objects
         '''
         titles = [i.title for i in metadata]
-        plugboards = self.library_view.model().db.prefs.get('plugboards', {})
+        plugboards = self.library_view.model().db.new_api.pref('plugboards', {})
         job = self.device_manager.upload_books(
                 FunctionDispatcher(self.books_uploaded),
                 files, names, on_card=on_card,
@@ -1887,7 +1891,7 @@ class DeviceMixin(object):  # {{{
                     # loop with preventing App Not Responding errors
                     if current_book_count % 10 == 0:
                         QCoreApplication.processEvents(
-                            flags=QEventLoop.ExcludeUserInputEvents|QEventLoop.ExcludeSocketNotifiers)
+                            flags=QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents|QEventLoop.ProcessEventsFlag.ExcludeSocketNotifiers)
                     current_book_count += 1
                     book.in_library = None
                     if getattr(book, 'uuid', None) in self.db_book_uuid_cache:
@@ -1948,7 +1952,7 @@ class DeviceMixin(object):  # {{{
 
             if update_metadata:
                 if self.device_manager.is_device_connected:
-                    plugboards = self.library_view.model().db.prefs.get('plugboards', {})
+                    plugboards = self.library_view.model().db.new_api.pref('plugboards', {})
                     self.device_manager.sync_booklists(
                                 FunctionDispatcher(self.metadata_synced), booklists,
                                 plugboards, add_as_step_to_job)

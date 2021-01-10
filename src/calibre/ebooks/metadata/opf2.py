@@ -1,5 +1,5 @@
-#!/usr/bin/env  python2
-from __future__ import print_function, unicode_literals, absolute_import, division
+#!/usr/bin/env python
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -8,12 +8,12 @@ __docformat__ = 'restructuredtext en'
 lxml based OPF parser.
 '''
 
-import re, sys, unittest, functools, os, uuid, glob, io, json, copy
+import re, sys, functools, os, uuid, glob, io, json, copy
 
 from lxml import etree
 
 from calibre.ebooks import escape_xpath_attr
-from calibre.constants import __appname__, __version__, filesystem_encoding, ispy3
+from calibre.constants import __appname__, __version__, filesystem_encoding
 from calibre.ebooks.metadata.toc import TOC
 from calibre.ebooks.metadata.utils import parse_opf, pretty_print_opf as _pretty_print
 from calibre.ebooks.metadata import string_to_authors, MetaInformation, check_isbn
@@ -205,13 +205,7 @@ class ManifestItem(Resource):  # {{{
     def __unicode__representation__(self):
         return u'<item id="%s" href="%s" media-type="%s" />'%(self.id, self.href(), self.media_type)
 
-    if ispy3:
-        __str__ = __unicode__representation__
-    else:
-        __unicode__ = __unicode__representation__
-
-        def __str__(self):
-            return unicode_type(self).encode('utf-8')
+    __str__ = __unicode__representation__
 
     def __repr__(self):
         return unicode_type(self)
@@ -509,6 +503,18 @@ def serialize_user_metadata(metadata_elem, all_user_metadata, tail='\n'+(' '*8))
         metadata_elem.append(meta)
 
 
+def serialize_annotations(metadata_elem, annotations, tail='\n'+(' '*8)):
+    for item in annotations:
+        data = json.dumps(item, ensure_ascii=False)
+        if isinstance(data, bytes):
+            data = data.decode('utf-8')
+        meta = metadata_elem.makeelement('meta')
+        meta.set('name', 'calibre:annotation')
+        meta.set('content', data)
+        meta.tail = tail
+        metadata_elem.append(meta)
+
+
 def dump_dict(cats):
     if not cats:
         cats = {}
@@ -652,6 +658,13 @@ class OPF(object):  # {{{
         ans.set_identifiers(self.get_identifiers())
 
         return ans
+
+    def read_annotations(self):
+        for elem in self.root.xpath('//*[name() = "meta" and @name = "calibre:annotation" and @content]'):
+            try:
+                yield json.loads(elem.get('content'))
+            except Exception:
+                pass
 
     def write_user_metadata(self):
         elems = self.root.xpath('//*[name() = "meta" and starts-with(@name,'
@@ -1300,7 +1313,9 @@ class OPF(object):  # {{{
                      'isbn', 'tags', 'category', 'comments', 'book_producer',
                      'pubdate', 'user_categories', 'author_link_map'):
             val = getattr(mi, attr, None)
-            is_null = val is None or val in ((), [], (None, None), {}) or (attr == 'rating' and val < 0.1)
+            if attr == 'rating' and val:
+                val = float(val)
+            is_null = val is None or val in ((), [], (None, None), {}) or (attr == 'rating' and (not val or val < 0.1))
             if is_null:
                 if apply_null and attr in {'series', 'tags', 'isbn', 'comments', 'publisher', 'rating'}:
                     setattr(self, attr, ([] if attr == 'tags' else None))
@@ -1312,6 +1327,7 @@ class OPF(object):  # {{{
         if apply_null or langs:
             self.languages = langs or []
         temp = self.to_book_metadata()
+        temp.remove_stale_user_metadata(mi)
         temp.smart_update(mi, replace_metadata=replace_metadata)
         if not replace_metadata and callable(getattr(temp, 'custom_field_keys', None)):
             # We have to replace non-null fields regardless of the value of
@@ -1670,6 +1686,9 @@ def metadata_to_opf(mi, as_string=True, default_lang=None):
         meta('user_categories', dump_dict(mi.user_categories))
 
     serialize_user_metadata(metadata, mi.get_all_user_metadata(False))
+    all_annotations = getattr(mi, 'all_annotations', None)
+    if all_annotations:
+        serialize_annotations(metadata, all_annotations)
 
     metadata[-1].tail = '\n' +(' '*4)
 
@@ -1723,78 +1742,80 @@ def test_m2o():
         print('!=', newmi.get_identifiers())
 
 
-class OPFTest(unittest.TestCase):
-
-    def setUp(self):
-        self.stream = io.BytesIO(
-b'''\
-<?xml version="1.0"  encoding="UTF-8"?>
-<package version="2.0" xmlns="http://www.idpf.org/2007/opf" >
-<metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title opf:file-as="Wow">A Cool &amp; &copy; &#223; Title</dc:title>
-    <creator opf:role="aut" file-as="Monkey">Monkey Kitchen</creator>
-    <creator opf:role="aut">Next</creator>
-    <dc:subject>One</dc:subject><dc:subject>Two</dc:subject>
-    <dc:identifier scheme="ISBN">123456789</dc:identifier>
-    <dc:identifier scheme="dummy">dummy</dc:identifier>
-    <meta name="calibre:series" content="A one book series" />
-    <meta name="calibre:rating" content="4"/>
-    <meta name="calibre:publication_type" content="test"/>
-    <meta name="calibre:series_index" content="2.5" />
-</metadata>
-<manifest>
-    <item id="1" href="a%20%7E%20b" media-type="text/txt" />
-</manifest>
-</package>
-'''
-        )
-        self.opf = OPF(self.stream, getcwd())
-
-    def testReading(self, opf=None):
-        if opf is None:
-            opf = self.opf
-        self.assertEqual(opf.title, u'A Cool & \xa9 \xdf Title')
-        self.assertEqual(opf.authors, u'Monkey Kitchen,Next'.split(','))
-        self.assertEqual(opf.author_sort, 'Monkey')
-        self.assertEqual(opf.title_sort, 'Wow')
-        self.assertEqual(opf.tags, ['One', 'Two'])
-        self.assertEqual(opf.isbn, '123456789')
-        self.assertEqual(opf.series, 'A one book series')
-        self.assertEqual(opf.series_index, 2.5)
-        self.assertEqual(opf.rating, 4)
-        self.assertEqual(opf.publication_type, 'test')
-        self.assertEqual(list(opf.itermanifest())[0].get('href'), 'a ~ b')
-        self.assertEqual(opf.get_identifiers(), {'isbn':'123456789',
-            'dummy':'dummy'})
-
-    def testWriting(self):
-        for test in [('title', 'New & Title'), ('authors', ['One', 'Two']),
-                     ('author_sort', "Kitchen"), ('tags', ['Three']),
-                     ('isbn', 'a'), ('rating', 3), ('series_index', 1),
-                     ('title_sort', 'ts')]:
-            setattr(self.opf, *test)
-            attr, val = test
-            self.assertEqual(getattr(self.opf, attr), val)
-
-        self.opf.render()
-
-    def testCreator(self):
-        opf = OPFCreator(getcwd(), self.opf)
-        buf = io.BytesIO()
-        opf.render(buf)
-        raw = buf.getvalue()
-        self.testReading(opf=OPF(io.BytesIO(raw), getcwd()))
-
-    def testSmartUpdate(self):
-        self.opf.smart_update(MetaInformation(self.opf))
-        self.testReading()
-
-
 def suite():
+    import unittest
+
+    class OPFTest(unittest.TestCase):
+
+        def setUp(self):
+            self.stream = io.BytesIO(
+    b'''\
+    <?xml version="1.0"  encoding="UTF-8"?>
+    <package version="2.0" xmlns="http://www.idpf.org/2007/opf" >
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+        <dc:title opf:file-as="Wow">A Cool &amp; &copy; &#223; Title</dc:title>
+        <creator opf:role="aut" file-as="Monkey">Monkey Kitchen</creator>
+        <creator opf:role="aut">Next</creator>
+        <dc:subject>One</dc:subject><dc:subject>Two</dc:subject>
+        <dc:identifier scheme="ISBN">123456789</dc:identifier>
+        <dc:identifier scheme="dummy">dummy</dc:identifier>
+        <meta name="calibre:series" content="A one book series" />
+        <meta name="calibre:rating" content="4"/>
+        <meta name="calibre:publication_type" content="test"/>
+        <meta name="calibre:series_index" content="2.5" />
+    </metadata>
+    <manifest>
+        <item id="1" href="a%20%7E%20b" media-type="text/txt" />
+    </manifest>
+    </package>
+    '''
+            )
+            self.opf = OPF(self.stream, getcwd())
+
+        def testReading(self, opf=None):
+            if opf is None:
+                opf = self.opf
+            self.assertEqual(opf.title, u'A Cool & \xa9 \xdf Title')
+            self.assertEqual(opf.authors, u'Monkey Kitchen,Next'.split(','))
+            self.assertEqual(opf.author_sort, 'Monkey')
+            self.assertEqual(opf.title_sort, 'Wow')
+            self.assertEqual(opf.tags, ['One', 'Two'])
+            self.assertEqual(opf.isbn, '123456789')
+            self.assertEqual(opf.series, 'A one book series')
+            self.assertEqual(opf.series_index, 2.5)
+            self.assertEqual(opf.rating, 4)
+            self.assertEqual(opf.publication_type, 'test')
+            self.assertEqual(list(opf.itermanifest())[0].get('href'), 'a ~ b')
+            self.assertEqual(opf.get_identifiers(), {'isbn':'123456789',
+                'dummy':'dummy'})
+
+        def testWriting(self):
+            for test in [('title', 'New & Title'), ('authors', ['One', 'Two']),
+                        ('author_sort', "Kitchen"), ('tags', ['Three']),
+                        ('isbn', 'a'), ('rating', 3), ('series_index', 1),
+                        ('title_sort', 'ts')]:
+                setattr(self.opf, *test)
+                attr, val = test
+                self.assertEqual(getattr(self.opf, attr), val)
+
+            self.opf.render()
+
+        def testCreator(self):
+            opf = OPFCreator(getcwd(), self.opf)
+            buf = io.BytesIO()
+            opf.render(buf)
+            raw = buf.getvalue()
+            self.testReading(opf=OPF(io.BytesIO(raw), getcwd()))
+
+        def testSmartUpdate(self):
+            self.opf.smart_update(MetaInformation(self.opf))
+            self.testReading()
+
     return unittest.TestLoader().loadTestsFromTestCase(OPFTest)
 
 
 def test():
+    import unittest
     unittest.TextTestRunner(verbosity=2).run(suite())
 
 

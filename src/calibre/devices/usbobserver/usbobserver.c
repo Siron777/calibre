@@ -280,7 +280,7 @@ usbobserver_get_mounted_filesystems(PyObject *self, PyObject *args) {
 	if (ans == NULL) { goto end; }
 
     for (i = 0 ; i < num; i++) {
-        val = PyBytes_FromString(buf[i].f_mntonname);
+        val = PyUnicode_FromString(buf[i].f_mntonname);
 		if (!val) { NUKE(ans); goto end; }
 		if (PyDict_SetItemString(ans, buf[i].f_mntfromname, val) != 0) { NUKE(ans); NUKE(val); goto end; }
         NUKE(val);
@@ -460,32 +460,17 @@ static PyMethodDef usbobserver_methods[] = {
 
     {NULL, NULL, 0, NULL}
 };
+static int
+exec_module(PyObject *module) { return 0; }
 
-#if PY_MAJOR_VERSION >= 3
-#define INITERROR return NULL
-#define INITMODULE PyModule_Create(&usbobserver_module)
-static struct PyModuleDef usbobserver_module = {
-    /* m_base     */ PyModuleDef_HEAD_INIT,
-    /* m_name     */ "usbobserver",
-    /* m_doc      */ usbobserver_doc,
-    /* m_size     */ -1,
-    /* m_methods  */ usbobserver_methods,
-    /* m_slots    */ 0,
-    /* m_traverse */ 0,
-    /* m_clear    */ 0,
-    /* m_free     */ 0,
+static PyModuleDef_Slot slots[] = { {Py_mod_exec, exec_module}, {0, NULL} };
+
+static struct PyModuleDef module_def = {
+    .m_base     = PyModuleDef_HEAD_INIT,
+    .m_name     = "usbobserver",
+    .m_doc      = usbobserver_doc,
+    .m_methods  = usbobserver_methods,
+    .m_slots    = slots,
 };
-CALIBRE_MODINIT_FUNC PyInit_usbobserver(void) {
-#else
-#define INITERROR return
-#define INITMODULE Py_InitModule3("usbobserver", usbobserver_methods, usbobserver_doc)
-CALIBRE_MODINIT_FUNC initusbobserver(void) {
-#endif
 
-    PyObject *m = NULL;
-    m = INITMODULE;
-
-#if PY_MAJOR_VERSION >= 3
-    return m;
-#endif
-}
+CALIBRE_MODINIT_FUNC PyInit_usbobserver(void) { return PyModuleDef_Init(&module_def); }

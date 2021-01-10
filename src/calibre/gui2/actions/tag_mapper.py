@@ -1,8 +1,9 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+
+from PyQt5.Qt import QDialog
 from polyglot.builtins import iteritems, map, range
 
 from calibre.gui2 import gprefs
@@ -42,7 +43,7 @@ class TagMapAction(InterfaceAction):
             'The changes will be applied to <b>one book in the library</b>',
             'The changes will be applied to <b>{} books in the library</b>', len(book_ids))
         d.edit_widget.msg_label.setText(d.edit_widget.msg_label.text() + '<p>' + txt.format(len(book_ids)))
-        if d.exec_() != d.Accepted:
+        if d.exec_() != QDialog.DialogCode.Accepted:
             return
         with BusyCursor():
             rules = d.rules
@@ -58,3 +59,4 @@ class TagMapAction(InterfaceAction):
             if changed_tag_map:
                 db.set_field('tags', changed_tag_map)
                 self.gui.library_view.model().refresh_ids(tuple(changed_tag_map), current_row=self.gui.library_view.currentIndex().row())
+                self.gui.tags_view.recount()

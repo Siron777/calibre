@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -14,7 +14,7 @@ from collections import OrderedDict
 from itertools import islice
 
 from calibre import detect_ncpus as cpu_count, as_unicode
-from calibre.constants import plugins, filesystem_encoding
+from calibre.constants import filesystem_encoding
 from calibre.utils.icu import primary_sort_key, primary_find, primary_collator
 from polyglot.builtins import iteritems, itervalues, map, unicode_type, range, zip, raw_input, filter, getcwd
 from polyglot.queue import Queue
@@ -255,12 +255,8 @@ class CScorer(object):
         level2=DEFAULT_LEVEL2,
         level3=DEFAULT_LEVEL3
     ):
-        speedup, err = plugins['matcher']
-        if speedup is None:
-            raise PluginFailed(
-                'Failed to load the matcher plugin with error: %s' % err
-            )
-        self.m = speedup.Matcher(
+        from calibre_extensions.matcher import Matcher
+        self.m = Matcher(
             items,
             primary_collator().capsule,
             unicode_type(level1), unicode_type(level2), unicode_type(level3)
@@ -310,7 +306,7 @@ def test(return_tests=False):
             m = Matcher([raw], scorer=CScorer)
             positions = next(itervalues(m(raw)))
             self.assertEqual(
-                positions, (0, 1, (2 if sys.maxunicode >= 0x10ffff else 3))
+                positions, (0, 1, 2)
             )
 
     if return_tests:
@@ -325,14 +321,8 @@ def test(return_tests=False):
     TestRunner(verbosity=4)
 
 
-if sys.maxunicode >= 0x10ffff:
-    get_char = lambda string, pos: string[pos]
-else:
-
-    def get_char(string, pos):
-        chs = 2 if ('\ud800' <= string[pos] <= '\udbff'
-                    ) else 1  # UTF-16 surrogate pair in python narrow builds
-        return string[pos:pos + chs]
+def get_char(string, pos):
+    return string[pos]
 
 
 def input_unicode(prompt):

@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -10,7 +10,7 @@ import importlib
 
 from PyQt5.Qt import (
     QIcon, Qt, QStringListModel, QListView, QSizePolicy, QHBoxLayout, QSize,
-    QStackedWidget, pyqtSignal)
+    QStackedWidget, pyqtSignal, QScrollArea)
 
 from calibre.gui2.preferences import ConfigWidgetBase, test_widget, AbortCommit
 from calibre.ebooks.conversion.plumber import Plumber
@@ -34,7 +34,7 @@ class Model(QStringListModel):
         self.setStringList([w.TITLE for w in widgets])
 
     def data(self, index, role):
-        if role == Qt.DecorationRole:
+        if role == Qt.ItemDataRole.DecorationRole:
             w = self.widgets[index.row()]
             if w.ICON:
                 return (QIcon(w.ICON))
@@ -47,12 +47,12 @@ class ListView(QListView):
 
     def __init__(self, parent=None):
         QListView.__init__(self, parent)
-        self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Expanding)
         f = self.font()
         f.setBold(True)
         self.setFont(f)
         self.setIconSize(QSize(48, 48))
-        self.setFlow(self.TopToBottom)
+        self.setFlow(QListView.Flow.TopToBottom)
         self.setSpacing(10)
 
     def currentChanged(self, cur, prev):
@@ -103,7 +103,10 @@ class Base(ConfigWidgetBase):
 
         for w in widgets:
             w.changed_signal.connect(self.changed_signal)
-            self.stack.addWidget(w)
+            sa = QScrollArea(self)
+            sa.setWidget(w)
+            sa.setWidgetResizable(True)
+            self.stack.addWidget(sa)
             if isinstance(w, TOCWidget):
                 w.manually_fine_tune_toc.hide()
 
@@ -115,7 +118,7 @@ class Base(ConfigWidgetBase):
 
     def restore_defaults(self):
         ConfigWidgetBase.restore_defaults(self)
-        self.stack.currentWidget().restore_defaults(self.plumber.get_option_by_name)
+        self.stack.currentWidget().widget().restore_defaults(self.plumber.get_option_by_name)
         self.changed_signal.emit()
 
     def commit(self):

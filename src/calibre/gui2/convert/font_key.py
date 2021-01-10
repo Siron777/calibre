@@ -1,12 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from PyQt5.Qt import QDialog
+from PyQt5.Qt import QDialog, QDialogButtonBox
 
 from calibre.gui2.convert.font_key_ui import Ui_Dialog
 from calibre.utils.localization import localize_user_manual_link
@@ -48,7 +48,7 @@ class FontKeyChooser(QDialog, Ui_Dialog):
         self.calculate()
 
     def button_clicked(self, button):
-        if button is self.buttonBox.button(self.buttonBox.RestoreDefaults):
+        if button is self.buttonBox.button(QDialogButtonBox.StandardButton.RestoreDefaults):
             self.output_base_font_size.setValue(0.0)
             self.font_size_key.setText('')
         self.calculate()

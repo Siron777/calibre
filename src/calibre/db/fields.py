@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -23,6 +23,10 @@ from polyglot.builtins import iteritems, unicode_type
 
 def bool_sort_key(bools_are_tristate):
     return (lambda x:{True: 1, False: 2, None: 3}.get(x, 3)) if bools_are_tristate else lambda x:{True: 1, False: 2, None: 2}.get(x, 2)
+
+
+def numeric_sort_key(x):
+    return x or 0
 
 
 IDENTITY = lambda x: x
@@ -56,6 +60,7 @@ class Field(object):
 
         if dt in {'int', 'float', 'rating'}:
             self._default_sort_key = 0
+            self._sort_key = numeric_sort_key
         elif dt == 'bool':
             self._default_sort_key = None
             self._sort_key = bool_sort_key(bools_are_tristate)
@@ -192,6 +197,13 @@ class OneToOneField(Field):
         dk = self._default_sort_key
         sk = self._sort_key
         if sk is IDENTITY:
+            if dk is not None:
+                def none_safe_key(book_id):
+                    ans = bcmg(book_id, dk)
+                    if ans is None:
+                        ans = dk
+                    return ans
+                return none_safe_key
             return lambda book_id:bcmg(book_id, dk)
         return lambda book_id:sk(bcmg(book_id, dk))
 
@@ -610,6 +622,9 @@ class FormatsField(ManyToManyField):
 
     def format_fname(self, book_id, fmt):
         return self.table.fname_map[book_id][fmt.upper()]
+
+    def format_size(self, book_id, fmt):
+        return self.table.size_map.get(book_id, {}).get(fmt.upper(), None)
 
     def iter_searchable_values(self, get_metadata, candidates, default_value=None):
         val_map = defaultdict(set)

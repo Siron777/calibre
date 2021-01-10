@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -10,7 +10,7 @@ import time
 
 from PyQt5.Qt import QTimer, QDialog, QDialogButtonBox, QCheckBox, QVBoxLayout, QLabel, Qt
 
-from calibre.gui2 import error_dialog
+from calibre.gui2 import error_dialog, question_dialog
 from calibre.gui2.actions import InterfaceAction
 
 
@@ -36,7 +36,7 @@ class Choose(QDialog):
         bb.rejected.connect(self.reject)
         self.buts = buts = []
         for fmt in fmts:
-            b = bb.addButton(fmt.upper(), bb.AcceptRole)
+            b = bb.addButton(fmt.upper(), QDialogButtonBox.ButtonRole.AcceptRole)
             b.setObjectName(fmt)
             connect_lambda(b.clicked, self, lambda self: self.chosen(self.sender().objectName()))
             buts.append(b)
@@ -105,19 +105,29 @@ class TweakEpubAction(InterfaceAction):
         from calibre.ebooks.oeb.polish.main import SUPPORTED
         db = self.gui.library_view.model().db
         fmts = db.formats(book_id, index_is_id=True) or ''
-        fmts = [x.upper().strip() for x in fmts.split(',')]
+        fmts = [x.upper().strip() for x in fmts.split(',') if x]
         tweakable_fmts = set(fmts).intersection(SUPPORTED)
         if not tweakable_fmts:
-            return error_dialog(self.gui, _('Cannot edit book'),
-                    _('The book must be in the %s formats to edit.'
-                        '\n\nFirst convert the book to one of these formats.') % (_(' or ').join(SUPPORTED)),
-                    show=True)
+            if not fmts:
+                if not question_dialog(self.gui, _('No editable formats'),
+                    _('Do you want to create an empty EPUB file to edit?')):
+                    return
+                tweakable_fmts = {'EPUB'}
+                self.gui.iactions['Add Books'].add_empty_format_to_book(book_id, 'EPUB')
+                current_idx = self.gui.library_view.currentIndex()
+                if current_idx.isValid():
+                    self.gui.library_view.model().current_changed(current_idx, current_idx)
+            else:
+                return error_dialog(self.gui, _('Cannot edit book'), _(
+                    'The book must be in the %s formats to edit.'
+                    '\n\nFirst convert the book to one of these formats.'
+                ) % (_(' or ').join(SUPPORTED)), show=True)
         from calibre.gui2.tweak_book import tprefs
         tprefs.refresh()  # In case they were changed in a Tweak Book process
         if len(tweakable_fmts) > 1:
             if tprefs['choose_tweak_fmt']:
                 d = Choose(sorted(tweakable_fmts, key=tprefs.defaults['tweak_fmt_order'].index), self.gui)
-                if d.exec_() != d.Accepted:
+                if d.exec_() != QDialog.DialogCode.Accepted:
                     return
                 tweakable_fmts = {d.fmt}
             else:
@@ -144,7 +154,7 @@ class TweakEpubAction(InterfaceAction):
                 ' library maintenance.') % fmt, show=True)
         tweak = 'ebook-edit'
         try:
-            self.gui.setCursor(Qt.BusyCursor)
+            self.gui.setCursor(Qt.CursorShape.BusyCursor)
             if tprefs['update_metadata_from_calibre']:
                 db.new_api.embed_metadata((book_id,), only_fmts={fmt})
             notify = '%d:%s:%s:%s' % (book_id, fmt, db.library_id, db.library_path)

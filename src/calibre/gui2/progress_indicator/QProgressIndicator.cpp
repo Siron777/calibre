@@ -9,27 +9,26 @@
 #include <QStyleOptionToolButton>
 #include <QFormLayout>
 #include <QDialogButtonBox>
+#include <QPainterPath>
 #include <algorithm>
 #include <qdrawutil.h>
 
+extern int qt_defaultDpiX();
+
 QProgressIndicator::QProgressIndicator(QWidget* parent, int size, int interval)
         : QWidget(parent),
-        m_angle(0),
-        m_timerId(-1),
-        m_delay(interval),
         m_displaySize(size, size),
-        m_dark(Qt::black),
-        m_light(Qt::white)
+		m_animator(this)
 {
+	Q_UNUSED(interval);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     setFocusPolicy(Qt::NoFocus);
-	m_dark = this->palette().color(QPalette::WindowText);
-	m_light = this->palette().color(QPalette::Window);
+	QObject::connect(&m_animator, SIGNAL(updated()), this, SLOT(update()));
 }
 
 bool QProgressIndicator::isAnimated () const
 {
-    return (m_timerId != -1);
+    return m_animator.is_running();
 }
 
 void QProgressIndicator::setDisplaySize(QSize size)
@@ -46,68 +45,38 @@ void QProgressIndicator::setSizeHint(QSize size)
     update();
 }
 
-
-
-
 void QProgressIndicator::startAnimation()
 {
-    m_angle = 0;
-
-    if (m_timerId == -1)
-        m_timerId = startTimer(m_delay);
+	if (!m_animator.is_running()) {
+		m_animator.start();
+		update();
+		emit running_state_changed(true);
+	}
 }
 void QProgressIndicator::start() { startAnimation(); }
 
 void QProgressIndicator::stopAnimation()
 {
-    if (m_timerId != -1)
-        killTimer(m_timerId);
-
-    m_timerId = -1;
-
-    update();
+	if (m_animator.is_running()) {
+		m_animator.stop();
+		update();
+		emit running_state_changed(false);
+	}
 }
 void QProgressIndicator::stop() { stopAnimation(); }
-
-void QProgressIndicator::setAnimationDelay(int delay)
-{
-    if (m_timerId != -1)
-        killTimer(m_timerId);
-
-    m_delay = delay;
-
-    if (m_timerId != -1)
-        m_timerId = startTimer(m_delay);
-}
-
-void QProgressIndicator::set_colors(const QColor & dark, const QColor & light)
-{
-    m_dark = dark; m_light = light;
-
-    update();
-}
 
 QSize QProgressIndicator::sizeHint() const
 {
     return m_displaySize;
 }
 
-int QProgressIndicator::heightForWidth(int w) const
-{
-    return w;
-}
-
-void QProgressIndicator::timerEvent(QTimerEvent * /*event*/)
-{
-    m_angle = (m_angle-2)%360;
-
-    update();
-}
-
 void QProgressIndicator::paintEvent(QPaintEvent * /*event*/)
 {
 	QPainter painter(this);
-	draw_snake_spinner(painter, this->rect(), m_angle, m_light, m_dark);
+	QRect r(this->rect());
+	QPoint center(r.center());
+	int smaller = std::min(r.width(), r.height());
+	m_animator.draw(painter, QRect(center.x() - smaller / 2, center.y() - smaller / 2, smaller, smaller), this->palette().color(QPalette::WindowText));
 }
 
 static inline QByteArray detectDesktopEnvironment()
@@ -138,6 +107,17 @@ is_color_dark(const QColor &col) {
 	int r, g, b;
 	col.getRgb(&r, &g, &b);
 	return r < 115 && g < 155 && b < 115;
+}
+
+static qreal
+dpiScaled(qreal value) {
+#ifdef Q_OS_MAC
+    // On mac the DPI is always 72 so we should not scale it
+    return value;
+#else
+    static const qreal scale = qreal(qt_defaultDpiX()) / 96.0;
+    return value * scale;
+#endif
 }
 
 class CalibreStyle: public QProxyStyle {
@@ -173,6 +153,10 @@ class CalibreStyle: public QProxyStyle {
                     return QFormLayout::FieldsStayAtSizeHint;  // Do not have fields expand to fill all available space in QFormLayout
                 case SH_ScrollBar_Transient:
                     return transient_scroller;
+#ifdef Q_OS_MAC
+				case SH_UnderlineShortcut:
+					return 0;
+#endif
 				default:
                     break;
             }
@@ -192,6 +176,8 @@ class CalibreStyle: public QProxyStyle {
             switch (metric) {
                 case PM_TabBarTabVSpace:
                     return 8;  // Make tab bars a little narrower, the value for the Fusion style is 12
+				case PM_TreeViewIndentation:
+					return int(dpiScaled(12));  // Reduce indentation in tree views
                 default:
                     break;
             }
@@ -247,6 +233,39 @@ class CalibreStyle: public QProxyStyle {
 					}
 					break; // }}}
 
+				case PE_IndicatorRadioButton: // {{{
+					// Fix color used to draw radiobutton outline in dark mode
+					if (is_color_dark(option->palette.color(QPalette::Window))) {
+						painter->save();
+						painter->setBrush((option->state & State_Sunken) ? option->palette.base().color().lighter(320) : option->palette.base().color());
+						painter->setRenderHint(QPainter::Antialiasing, true);
+						QPainterPath circle;
+						const QPointF circleCenter = option->rect.center() + QPoint(1, 1);
+						const qreal outlineRadius = (option->rect.width() + (option->rect.width() + 1) % 2) / 2.0 - 1;
+						circle.addEllipse(circleCenter, outlineRadius, outlineRadius);
+						painter->setPen(QPen(option->palette.window().color().lighter(320)));
+						if (option->state & State_HasFocus && option->state & State_KeyboardFocusChange) {
+							QColor highlightedOutline = option->palette.color(QPalette::Highlight).lighter(125);
+							painter->setPen(QPen(highlightedOutline));
+						}
+						painter->drawPath(circle);
+
+						if (option->state & (State_On )) {
+							circle = QPainterPath();
+							const qreal checkmarkRadius = outlineRadius / 2.32;
+							circle.addEllipse(circleCenter, checkmarkRadius, checkmarkRadius);
+							QColor checkMarkColor = option->palette.text().color().lighter(120);
+							checkMarkColor.setAlpha(200);
+							painter->setPen(checkMarkColor);
+							checkMarkColor.setAlpha(180);
+							painter->setBrush(checkMarkColor);
+							painter->drawPath(circle);
+						}
+						painter->restore();
+						return;
+					} else { baseStyle()->drawPrimitive(element, option, painter, widget); }
+					break; // }}}
+
                 case PE_PanelItemViewItem:  // {{{
                     // Highlight the current, selected item with a different background in an item view if the highlight current item property is set
                     if (option->state & QStyle::State_HasFocus && (vopt = qstyleoption_cast<const QStyleOptionViewItem *>(option)) && widget && widget->property("highlight_current_item").toBool()) {
@@ -299,7 +318,22 @@ class CalibreStyle: public QProxyStyle {
 						}
 					}
 					return; // }}}
-
+                case PE_FrameFocusRect:  // }}}
+                    if (!widget || !widget->property("frame_for_focus").toBool())
+                        break;
+                    if (const QStyleOptionFocusRect *fropt = qstyleoption_cast<const QStyleOptionFocusRect *>(option)) {
+                        if (!(fropt->state & State_KeyboardFocusChange))
+                            break;
+                        painter->save();
+                        painter->setRenderHint(QPainter::Antialiasing, true);
+                        painter->translate(0.5, 0.5);
+                        painter->setPen(option->palette.color(QPalette::Text));
+                        painter->setBrush(Qt::transparent);
+                        painter->drawRoundedRect(option->rect.adjusted(0, 0, -1, -1), 4, 4);
+                        painter->restore();
+                        return;
+                    }
+                    break; // }}}
                 default:
                     break;
             }

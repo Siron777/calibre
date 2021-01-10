@@ -1,47 +1,53 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, hashlib, uuid, struct
+import errno
+import hashlib
+import os
+import struct
+import uuid
 from collections import namedtuple
-from io import BytesIO, DEFAULT_BUFFER_SIZE
+from functools import wraps
+from io import DEFAULT_BUFFER_SIZE, BytesIO
 from itertools import chain, repeat
 from operator import itemgetter
-from functools import wraps
 
-from polyglot.builtins import iteritems, itervalues, reraise, map, is_py3, unicode_type, string_or_bytes
-
-from calibre import guess_type, force_unicode
-from calibre.constants import __version__, plugins, ispy3
-from calibre.srv.loop import WRITE
+from calibre import force_unicode, guess_type
+from calibre.constants import __version__
 from calibre.srv.errors import HTTPSimpleResponse
 from calibre.srv.http_request import HTTPRequest, read_headers
-from calibre.srv.sendfile import file_metadata, sendfile_to_socket_async, CannotSendfile, SendfileInterrupted
+from calibre.srv.loop import WRITE
 from calibre.srv.utils import (
-    MultiDict, http_date, HTTP1, HTTP11, socket_errors_socket_closed,
-    sort_q_values, get_translator_for_lang, Cookie, fast_now_strftime)
-from calibre.utils.speedups import ReadOnlyFileBuffer
+    HTTP1, HTTP11, Cookie, MultiDict, fast_now_strftime, get_translator_for_lang,
+    http_date, socket_errors_socket_closed, sort_q_values
+)
 from calibre.utils.monotonic import monotonic
+from calibre.utils.speedups import ReadOnlyFileBuffer
 from polyglot import http_client, reprlib
-from polyglot.builtins import error_message
+from polyglot.builtins import (
+    error_message, iteritems, itervalues, map, reraise, string_or_bytes,
+    unicode_type
+)
 
 Range = namedtuple('Range', 'start stop size')
 MULTIPART_SEPARATOR = uuid.uuid4().hex
 if isinstance(MULTIPART_SEPARATOR, bytes):
     MULTIPART_SEPARATOR = MULTIPART_SEPARATOR.decode('ascii')
 COMPRESSIBLE_TYPES = {'application/json', 'application/javascript', 'application/xml', 'application/oebps-package+xml'}
-if is_py3:
-    import zlib
-    from itertools import zip_longest
-else:
-    zlib, zlib2_err = plugins['zlib2']
-    if zlib2_err:
-        raise RuntimeError('Failed to load the zlib2 module with error: ' + zlib2_err)
-    del zlib2_err
-    from itertools import izip_longest as zip_longest
+import zlib
+from itertools import zip_longest
+
+
+def file_metadata(fileobj):
+    try:
+        fd = fileobj.fileno()
+        return os.fstat(fd)
+    except Exception:
+        pass
 
 
 def header_list_to_file(buf):  # {{{
@@ -219,7 +225,7 @@ class RequestData(object):  # {{{
     username = None
 
     def __init__(self, method, path, query, inheaders, request_body_file, outheaders, response_protocol,
-                 static_cache, opts, remote_addr, remote_port, is_local_connection, translator_cache,
+                 static_cache, opts, remote_addr, remote_port, is_trusted_ip, translator_cache,
                  tdir, forwarded_for, request_original_uri=None):
 
         (self.method, self.path, self.query, self.inheaders, self.request_body_file, self.outheaders,
@@ -228,7 +234,7 @@ class RequestData(object):  # {{{
             response_protocol, static_cache, translator_cache
         )
 
-        self.remote_addr, self.remote_port, self.is_local_connection = remote_addr, remote_port, is_local_connection
+        self.remote_addr, self.remote_port, self.is_trusted_ip = remote_addr, remote_port, is_trusted_ip
         self.forwarded_for = forwarded_for
         self.request_original_uri = request_original_uri
         self.opts = opts
@@ -290,8 +296,8 @@ class RequestData(object):  # {{{
         if lang_code != self.lang_code:
             found, lang, t = self.get_translator(lang_code)
             self.lang_code = lang
-            self.gettext_func = getattr(t, 'gettext' if ispy3 else 'ugettext')
-            self.ngettext_func = getattr(t, 'ngettext' if ispy3 else 'ungettext')
+            self.gettext_func = t.gettext
+            self.ngettext_func = t.ngettext
 # }}}
 
 
@@ -381,16 +387,14 @@ class HTTPConnection(HTTPRequest):
         if limit <= 0:
             return True
         if self.use_sendfile and not isinstance(buf, (BytesIO, ReadOnlyFileBuffer)):
+            limit = min(limit, 2 ** 30)
             try:
-                sent = sendfile_to_socket_async(buf, pos, limit, self.socket)
-            except CannotSendfile:
-                self.use_sendfile = False
-                return False
-            except SendfileInterrupted:
-                return False
-            except IOError as e:
+                sent = os.sendfile(self.socket.fileno(), buf.fileno(), pos, limit)
+            except OSError as e:
                 if e.errno in socket_errors_socket_closed:
                     self.ready = self.use_sendfile = False
+                    return False
+                if e.errno in (errno.EAGAIN, errno.EINTR):
                     return False
                 raise
             finally:
@@ -446,7 +450,7 @@ class HTTPConnection(HTTPRequest):
         data = RequestData(
             self.method, self.path, self.query, inheaders, request_body_file,
             outheaders, self.response_protocol, self.static_cache, self.opts,
-            self.remote_addr, self.remote_port, self.is_local_connection,
+            self.remote_addr, self.remote_port, self.is_trusted_ip,
             self.translator_cache, self.tdir, self.forwarded_for, self.request_original_uri
         )
         self.queue_job(self.run_request_handler, data)
@@ -568,7 +572,7 @@ class HTTPConnection(HTTPRequest):
             self.reset_state()
             return
         if isinstance(output, ReadableOutput):
-            self.use_sendfile = output.use_sendfile and self.opts.use_sendfile and sendfile_to_socket_async is not None and self.ssl_context is None
+            self.use_sendfile = output.use_sendfile and self.opts.use_sendfile and hasattr(os, 'sendfile') and self.ssl_context is None
             # sendfile() does not work with SSL sockets since encryption has to
             # be done in userspace
             if output.ranges is not None:

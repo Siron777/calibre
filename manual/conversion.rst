@@ -256,17 +256,26 @@ or color all headings a certain color, etc.
 Page setup
 -------------
 
-The :guilabel:`Page setup` options are for controlling screen layout, like margins and screen sizes. There are
-options to setup page margins, which will be used by the output plugin, if the selected output format
-supports page margins. In addition, you should choose an Input profile and an output profile. Both sets
-of profiles basically deal with how to interpret measurements in the input/output documents, screen sizes
-and default font rescaling keys.
+The :guilabel:`Page setup` options are for controlling screen layout, like
+margins and screen sizes. There are options to setup page margins, which will
+be used by the output plugin, if the selected output format supports page
+margins. In addition, you should choose an Input profile and an output profile.
+Both sets of profiles basically deal with how to interpret measurements in the
+input/output documents, screen sizes and default font rescaling keys.
 
-If you know that the file you are converting was intended to be used on a particular device/software platform,
-choose the corresponding input profile, otherwise just choose the default input profile. If you know the files
-you are producing are meant for a particular device type, choose the corresponding output profile. In particular, for MOBI output files, you should choose the Kindle, for LIT the Microsoft Reader and for EPUB the Sony Reader. In the case of EPUB, the Sony Reader profile will result in EPUB files that will work everywhere. However, it has some side effects, like inserting artificial section breaks to keep internal components below the size threshold, needed for SONY devices. In particular for the iPhone/Android phones, choose the SONY output profile. If you know your EPUB files will not be read on a SONY or similar device, use the default output profile. If you are producing MOBI files that are not intended for the Kindle, choose the Mobipocket books output profile.
+If you know that the file you are converting was intended to be used on a
+particular device/software platform, choose the corresponding input profile,
+otherwise just choose the default input profile. If you know the files you are
+producing are meant for a particular device type, choose the corresponding
+output profile. Otherwise, choose one of the Generic output profiles. If you
+are converting to MOBI or AZW3 then you will almost always want to choose one
+of the Kindle output profiles. Otherwise, your best bet for modern E-book
+reading devices is to choose the :guilabel:`Generic e-ink HD` output profile.
 
-The output profile also controls the screen size. This will cause, for example, images to be auto-resized to be fit to the screen in some output formats. So choose a profile of a device that has a screen size similar to your device.
+The output profile also controls the screen size. This will cause, for example,
+images to be auto-resized to be fit to the screen in some output formats. So
+choose a profile of a device that has a screen size similar to your device.
+
 
 .. _heuristic-processing:
 
@@ -292,12 +301,12 @@ remove all non-breaking-space entities, or may include false positive matches re
 :guilabel:`Line-unwrap factor`
     This option controls the algorithm calibre uses to remove hard line breaks. For example, if the value of this
     option is 0.4, that means calibre will remove hard line breaks from the end of lines whose lengths are less
-    than the length of 40% of all lines in the document.  If your document only has a few line breaks which need
+    than the length of 40% of all lines in the document. If your document only has a few line breaks which need
     correction, then this value should be reduced to somewhere between 0.1 and 0.2.
 
 :guilabel:`Detect and markup unformatted chapter headings and sub headings`
     If your document does not have chapter headings and titles formatted differently from the rest of the text,
-    calibre can use this option to attempt detection them and surround them with heading tags. <h2> tags are used
+    calibre can use this option to attempt to detect them and surround them with heading tags. <h2> tags are used
     for chapter headings; <h3> tags are used for any titles that are detected.
 
     This function will not create a TOC, but in many cases it will cause calibre's default chapter detection settings
@@ -382,15 +391,18 @@ and their syntax at :ref:`regexptutorial`.
 Structure detection
 ---------------------
 
-Structure detection involves calibre trying its best to detect structural elements in the input document, when they are not properly specified. For example, chapters, page breaks, headers, footers, etc. As you can imagine, this process varies widely from book to book. Fortunately, calibre has very powerful options to control this. With power comes complexity, but if once you take the time to learn the complexity, you will find it well worth the effort.
+Structure detection involves calibre trying its best to detect structural elements in the input document, when they are not
+properly specified. For example, chapters, page breaks, headers, footers, etc. As you can imagine, this process varies widely
+from book to book. Fortunately, calibre has very powerful options to control this. With power comes complexity, but if once you
+take the time to learn the complexity, you will find it well worth the effort.
 
 Chapters and page breaks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-calibre has two sets of options for :guilabel:`chapter detection` and :guilabel:`inserting page breaks`. This can sometimes be slightly confusing, as by default,
-calibre will insert page breaks before detected chapters as well as the locations detected by the page breaks option.
-The reason for this is that there are often location where page breaks should be inserted that are not chapter boundaries.
-Also, detected chapters can be optionally inserted into the auto generated Table of Contents.
+calibre has two sets of options for :guilabel:`chapter detection` and :guilabel:`inserting page breaks`. This can sometimes be
+slightly confusing, as by default, calibre will insert page breaks before detected chapters as well as the locations detected by
+the page breaks option. The reason for this is that there are often location where page breaks should be inserted that are not
+chapter boundaries. Also, detected chapters can be optionally inserted into the auto generated Table of Contents.
 
 calibre uses *XPath*, a powerful language to allow the user to specify chapter boundaries/page breaks. XPath can seem a little daunting
 to use at first, fortunately, there is a :ref:`XPath tutorial <xpath-tutorial>` in the User Manual. Remember that Structure detection
@@ -398,7 +410,7 @@ operates on the intermediate XHTML produced by the conversion pipeline. Use the 
 :ref:`conversion-introduction` to figure out the appropriate settings for your book. There is also a button for a XPath wizard
 to help with the generation of simple XPath expressions.
 
-By default, calibre uses the following expression for chapter detection::
+By default, calibre uses the following expression for detecting chapters::
 
     //*[((name()='h1' or name()='h2') and re:test(., 'chapter|book|section|part\s+', 'i')) or @class = 'chapter']
 
@@ -468,7 +480,7 @@ in the :ref:`structure-detection` section above. If you do not want to include d
 table of contents, check the :guilabel:`Do not add detected chapters` option.
 
 If less than the :guilabel:`Chapter threshold` number of chapters were detected, calibre will then add any hyperlinks
-it finds in the input document to the Table of Contents. This often works well many input documents include a
+it finds in the input document to the Table of Contents. This often works well: many input documents include a
 hyperlinked Table of Contents right at the start. The :guilabel:`Number of links` option can be used to control
 this behavior. If set to zero, no links are added. If set to a number greater than zero, at most that number of links
 is added.
@@ -589,22 +601,22 @@ clicking the :guilabel:`Edit metadata` button to bring up the bulk metadata
 edit dialog, near the bottom of the dialog is an option to remove stored
 conversion settings.
 
-When you Bulk Convert a set of books, settings are taken in the following order (last one wins):
+When you bulk convert a set of books, settings are taken in the following order (last one wins):
 
     * From the defaults set in Preferences->Conversion
 
     * From the saved conversion settings for each book being converted (if
       any). This can be turned off by the option in the top left corner of the
-      Bulk Conversion dialog.
+      Bulk conversion dialog.
 
     * From the settings set in the Bulk conversion dialog
 
-Note that the final settings for each book in a Bulk Conversion will be saved
+Note that the final settings for each book in a Bulk conversion will be saved
 and re-used if the book is converted again. Since the highest priority in Bulk
-Conversion is given to the settings in the Bulk Conversion dialog, these will
+Conversion is given to the settings in the Bulk conversion dialog, these will
 override any book specific settings. So you should only bulk convert books
 together that need similar settings. The exceptions are metadata and input
-format specific settings. Since the Bulk Conversion dialog does not have
+format specific settings. Since the Bulk conversion dialog does not have
 settings for these two categories, they will be taken from book specific
 settings (if any) or the defaults.
 
@@ -625,8 +637,7 @@ Convert Microsoft Word documents
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 calibre can automatically convert ``.docx`` files created by Microsoft Word 2007 and
-newer. Just add the file to calibre and click convert (make sure you are running
-the latest version of calibre as support for ``.docx`` files is very new).
+newer. Just add the file to calibre and click convert.
 
 .. note::
     There is a `demo .docx file <https://calibre-ebook.com/downloads/demos/demo.docx>`_
@@ -646,7 +657,7 @@ and then convert the resulting HTML file with calibre. When saving as
 HTML, be sure to use the "Save as Web Page, Filtered" option as this will
 produce clean HTML that will convert well. Note that Word produces really messy
 HTML, converting it can take a long time, so be patient. If you have a newer
-version of Word available, you can directly save it as docx as well.
+version of Word available, you can directly save it as .docx as well.
 
 Another alternative is to use the free OpenOffice. Open your .doc file in
 OpenOffice and save it in OpenOffice's format .odt. calibre can directly convert
@@ -721,13 +732,13 @@ Convert PDF documents
 
 PDF documents are one of the worst formats to convert from. They are a fixed page size and text placement format.
 Meaning, it is very difficult to determine where one paragraph ends and another begins. calibre will try to unwrap
-paragraphs using a configurable, :guilabel:`Line Un-Wrapping Factor`. This is a scale used to determine the length
+paragraphs using a configurable, :guilabel:`Line un-wrapping factor`. This is a scale used to determine the length
 at which a line should be unwrapped. Valid values are a decimal
 between 0 and 1. The default is 0.45, just under the median line length. Lower this value to include more
 text in the unwrapping. Increase to include less. You can adjust this value in the conversion settings under :guilabel:`PDF Input`.
 
 Also, they often have headers and footers as part of the document that will become included with the text.
-Use the Search and Replace panel to remove headers and footers to mitigate this issue. If the headers and footers are not
+Use the :guilabel:`Search and replace` panel to remove headers and footers to mitigate this issue. If the headers and footers are not
 removed from the text it can throw off the paragraph unwrapping. To learn how to use the header and footer removal options, read
 :ref:`regexptutorial`.
 
@@ -737,7 +748,7 @@ Some limitations of PDF input are:
     * Extraction of vector images and tables from within the document is also not supported.
     * Some PDFs use special glyphs to represent ll or ff or fi, etc. Conversion of these may or may not work depending on just how they are represented internally in the PDF.
     * Links and Tables of Contents are not supported
-    * PDFs that use embedded non-unicode fonts to represent non-English characters will result in garbled output for those characters
+    * PDFs that use embedded non-Unicode fonts to represent non-English characters will result in garbled output for those characters
     * Some PDFs are made up of photographs of the page with OCRed text behind them. In such cases calibre uses the OCRed text, which can be very different from what you see when you view the PDF file
     * PDFs that are used to display complex text, like right to left languages and math typesetting will not convert correctly
 
@@ -881,6 +892,17 @@ of 1::
         <script>document.currentScript.parentNode.querySelector("div").innerHTML = "" + (_PAGENUM_ + 3)</script>
     </footer>
 
+
+In addition there are some more variables you can use in the headers and
+footers, documented below:
+
+  * ``_TOTAL_PAGES_`` - total number of pages in the PDF file, useful for
+    implementing a progress counter, for example.
+  * ``_TOP_LEVEL_SECTION_PAGES_`` - total number of pages in the current top
+    level section
+  * ``_TOP_LEVEL_SECTION_PAGENUM_`` - the page number of the current page
+    within the current top level section
+
 .. note:: When adding headers and footers make sure you set the page top and
     bottom margins to large enough values, under the :guilabel:`PDF Output`
     section of the conversion dialog.
@@ -895,7 +917,7 @@ then the PDF Outline provides this functionality and is generated by default.
 
 You can customize the look of the generated Table of contents by using the
 Extra CSS conversion setting under the Look & feel part of the conversion
-dialog. The default css used is listed below, simply copy it and make whatever
+dialog. The default CSS used is listed below, simply copy it and make whatever
 changes you like.
 
 .. code-block:: css
@@ -915,10 +937,10 @@ changes you like.
 Custom page margins for individual HTML files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you are converting an EPUB of AZW3 file with multiple individual HTML files
+If you are converting an EPUB or AZW3 file with multiple individual HTML files
 inside it and you want to change the page margins for a particular HTML file
 you can add the following style block to the HTML file using the calibre
-editor:
+E-book editor:
 
 .. code-block:: html
 

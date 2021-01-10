@@ -34,13 +34,13 @@ from book_list.router import back, home, push_state, update_window_title
 from book_list.search import (
     init as init_search_panel, set_apply_search, tb_config_panel_handler
 )
-from book_list.top_bar import add_button, create_top_bar
+from book_list.top_bar import add_button, create_top_bar, set_title_tooltip
 from book_list.ui import query_as_href, set_panel_handler, show_panel
 from dom import add_extra_css, build_rule, clear, ensure_id, set_css
 from modals import error_dialog
 from session import get_interface_data
 from utils import conditional_timeout, parse_url_params, safe_set_inner_html
-from widgets import create_button, create_spinner
+from widgets import create_button, create_spinner, enable_escape_key
 
 CLASS_NAME = 'book-list-container'
 ITEM_CLASS_NAME = 'book-list-item'
@@ -319,6 +319,8 @@ def check_for_books_loaded():
         )
         return
     create_books_list(container)
+    if library_data.search_result and jstype(library_data.search_result.num_books_without_search) is 'number':
+        set_title_tooltip(this, _('Total number of books: {}').format(library_data.search_result.num_books_without_search))
 
 
 def init(container_id):
@@ -375,6 +377,7 @@ def create_sort_panel(container_id):
         items.push(create_item(name, subtitle=subtitle, icon=icon_name, action=action))
     container.appendChild(E.div())
     create_item_list(container.lastChild, items, _('Change how the list of books is sorted'))
+    enable_escape_key(container, close_action)
 # }}}
 
 # Searching {{{
@@ -410,6 +413,7 @@ def create_vl_panel(container_id):
         items.push(create_item(name, subtitle=vls[name], action=show_vl.bind(None, name, True)))
     container.appendChild(E.div())
     create_item_list(container.lastChild, items, _('Choose a Virtual library to browse from the list below'))
+    enable_escape_key(container, back)
 
 
 def show_vl(vl_name, replace):
@@ -442,6 +446,7 @@ def create_mode_panel(container_id):
     ci(_('Custom list'), CUSTOM_LIST_DESCRIPTION(), 'custom_list')
     container.appendChild(E.div())
     create_item_list(container.lastChild, items, _('Choose a display mode for the list of books from below'))
+    enable_escape_key(container, back)
 
 # }}}
 
@@ -466,7 +471,7 @@ def create_more_actions_panel(container_id):
         ))
     container.appendChild(E.div())
     create_item_list(container.lastChild, items)
-
+    enable_escape_key(container, back)
 # }}}
 
 # Adding books {{{

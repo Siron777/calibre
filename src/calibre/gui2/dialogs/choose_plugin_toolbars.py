@@ -1,7 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -30,8 +29,8 @@ class ChoosePluginToolbarsDialog(QDialog):
         self._layout.addWidget(self._header_label)
 
         self._locations_list = QListWidget(self)
-        self._locations_list.setSelectionMode(QAbstractItemView.MultiSelection)
-        sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self._locations_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         self._locations_list.setSizePolicy(sizePolicy)
@@ -47,8 +46,8 @@ class ChoosePluginToolbarsDialog(QDialog):
               'using <b>Preferences -> Interface -> Toolbars</b>'))
         self._layout.addWidget(self._footer_label)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok |
-                QDialogButtonBox.Cancel)
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                QDialogButtonBox.StandardButton.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         self._layout.addWidget(button_box)

@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -10,9 +10,9 @@ import errno, os
 from functools import partial
 from collections import Counter
 
-from PyQt5.Qt import QObject, QTimer, QModelIndex
+from PyQt5.Qt import QObject, QTimer, QModelIndex, QDialog
 
-from calibre.constants import isosx
+from calibre.constants import ismacos
 from calibre.gui2 import error_dialog, question_dialog
 from calibre.gui2.dialogs.delete_matching_from_device import DeleteMatchingFromDeviceDialog
 from calibre.gui2.dialogs.confirm_delete import confirm
@@ -87,7 +87,7 @@ class MultiDeleter(QObject):  # {{{
 class DeleteAction(InterfaceAction):
 
     name = 'Remove Books'
-    action_spec = (_('Remove books'), 'remove_books.png', _('Delete books'), 'Backspace' if isosx else 'Del')
+    action_spec = (_('Remove books'), 'remove_books.png', _('Delete books'), 'Backspace' if ismacos else 'Del')
     action_type = 'current'
     action_add_menu = True
     action_menu_clone_qaction = _('Remove selected books')
@@ -123,7 +123,7 @@ class DeleteAction(InterfaceAction):
         self.delete_menu = self.qaction.menu()
         m = partial(self.create_menu_action, self.delete_menu)
         m('delete-specific',
-                _('Remove files of a specific format from selected books...'),
+                _('Remove files of a specific format from selected books'),
                 triggered=self.delete_selected_formats)
         m('delete-except',
                 _('Remove all formats from selected books, except...'),
@@ -158,7 +158,7 @@ class DeleteAction(InterfaceAction):
                     c[x] += 1
         d = SelectFormats(c, msg, parent=self.gui, exclude=exclude,
                 single=single)
-        if d.exec_() != d.Accepted:
+        if d.exec_() != QDialog.DialogCode.Accepted:
             return None
         return d.selected_formats
 

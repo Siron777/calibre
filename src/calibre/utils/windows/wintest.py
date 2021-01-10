@@ -1,8 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import unittest
@@ -12,8 +11,8 @@ from polyglot.builtins import unicode_type
 class TestWinutil(unittest.TestCase):
 
     def setUp(self):
-        from calibre.constants import plugins
-        self.winutil = plugins['winutil'][0]
+        from calibre_extensions import winutil
+        self.winutil = winutil
 
     def tearDown(self):
         del self.winutil

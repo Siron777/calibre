@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -80,7 +80,7 @@ class EmbedAction(InterfaceAction):
     def do_embed(self, book_ids, only_fmts=None):
         pd = QProgressDialog(_('Embedding updated metadata into book files...'), _('&Stop'), 0, len(book_ids), self.gui)
         pd.setWindowTitle(_('Embedding metadata...'))
-        pd.setWindowModality(Qt.WindowModal)
+        pd.setWindowModality(Qt.WindowModality.WindowModal)
         errors = []
         self.job_data = (0, tuple(book_ids), pd, only_fmts, errors)
         self.pd_timer.start()

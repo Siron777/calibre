@@ -1,32 +1,33 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import os
-from functools import partial
 from collections import defaultdict
-
-from PyQt5.Qt import QPixmap, QTimer, QApplication
+from functools import partial
+from PyQt5.Qt import QApplication, QDialog, QPixmap, QTimer
 
 from calibre import as_unicode, guess_type
-from calibre.gui2 import (error_dialog, choose_files, choose_dir,
-        warning_dialog, info_dialog, gprefs)
+from calibre.constants import iswindows
+from calibre.ebooks import BOOK_EXTENSIONS
+from calibre.ebooks.metadata import MetaInformation
+from calibre.gui2 import (
+    choose_dir, choose_files, error_dialog, gprefs, info_dialog, question_dialog,
+    warning_dialog
+)
+from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.dialogs.add_empty_book import AddEmptyBookDialog
 from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.gui2.dialogs.progress import ProgressDialog
-from calibre.ebooks import BOOK_EXTENSIONS
-from calibre.utils.config_base import tweaks
-from calibre.utils.filenames import ascii_filename
-from calibre.utils.icu import sort_key
-from calibre.gui2.actions import InterfaceAction
-from calibre.gui2 import question_dialog
-from calibre.ebooks.metadata import MetaInformation
 from calibre.ptempfile import PersistentTemporaryFile
-from polyglot.builtins import iteritems, string_or_bytes, range
+from calibre.utils.config_base import tweaks
+from calibre.utils.filenames import ascii_filename, make_long_path_useable
+from calibre.utils.icu import sort_key
+from polyglot.builtins import iteritems, range, string_or_bytes
 
 
 def get_filters():
@@ -151,6 +152,7 @@ class AddAction(InterfaceAction):
                   ' files to all %d books? If the format'
                   ' already exists for a book, it will be replaced.')%len(ids)):
             return
+        paths = list(map(make_long_path_useable, paths))
 
         db = self.gui.current_db
         if len(ids) == 1:
@@ -205,7 +207,7 @@ class AddAction(InterfaceAction):
         from calibre.ebooks.oeb.polish.create import valid_empty_formats
         from calibre.gui2.dialogs.choose_format import ChooseFormatDialog
         d = ChooseFormatDialog(self.gui, _('Choose format of empty file'), sorted(valid_empty_formats))
-        if d.exec_() != d.Accepted or not d.format():
+        if d.exec_() != QDialog.DialogCode.Accepted or not d.format():
             return
         self._add_empty_format(d.format())
 
@@ -225,27 +227,31 @@ class AddAction(InterfaceAction):
                 formats = {x.lower() for x in formats.split(',')}
                 if format_ in formats:
                     title = db.title(ids[0], index_is_id=True)
-                    msg = _('The {0} format will be replaced in the book {1}. Are you sure?').format(
+                    msg = _('The {0} format will be replaced in the book: {1}. Are you sure?').format(
                         format_, title)
                     if not confirm(msg, 'confirm_format_override_on_add', title=_('Are you sure?'),
                                    parent=self.gui):
                         return
 
         for id_ in ids:
-            from calibre.ebooks.oeb.polish.create import create_book
-            pt = PersistentTemporaryFile(suffix='.' + format_)
-            pt.close()
-            try:
-                mi = db.new_api.get_metadata(id_, get_cover=False,
-                                    get_user_categories=False, cover_as_data=False)
-                create_book(mi, pt.name, fmt=format_)
-                db.add_format_with_hooks(id_, format_, pt.name, index_is_id=True, notify=True)
-            finally:
-                os.remove(pt.name)
+            self.add_empty_format_to_book(id_, format_)
 
         current_idx = self.gui.library_view.currentIndex()
         if current_idx.isValid():
             view.model().current_changed(current_idx, current_idx)
+
+    def add_empty_format_to_book(self, book_id, fmt):
+        from calibre.ebooks.oeb.polish.create import create_book
+        db = self.gui.current_db
+        pt = PersistentTemporaryFile(suffix='.' + fmt.lower())
+        pt.close()
+        try:
+            mi = db.new_api.get_metadata(book_id, get_cover=False,
+                                get_user_categories=False, cover_as_data=False)
+            create_book(mi, pt.name, fmt=fmt.lower())
+            db.add_format_with_hooks(book_id, fmt, pt.name, index_is_id=True, notify=True)
+        finally:
+            os.remove(pt.name)
 
     def add_archive(self, single):
         paths = choose_files(
@@ -315,7 +321,7 @@ class AddAction(InterfaceAction):
             title = index.model().db.title(index.row())
         dlg = AddEmptyBookDialog(self.gui, self.gui.library_view.model().db,
                                  author, series, dup_title=title)
-        if dlg.exec_() == dlg.Accepted:
+        if dlg.exec_() == QDialog.DialogCode.Accepted:
             temp_files = []
             num = dlg.qty_to_add
             series = dlg.selected_series
@@ -425,6 +431,9 @@ class AddAction(InterfaceAction):
         formats = []
         from calibre.gui2.dnd import image_extensions
         image_exts = set(image_extensions()) - set(tweaks['cover_drop_exclude'])
+        if iswindows:
+            from calibre.gui2.add import resolve_windows_links
+            paths = list(resolve_windows_links(paths, hwnd=int(self.gui.effectiveWinId())))
         for path in paths:
             ext = os.path.splitext(path)[1].lower()
             if ext:
@@ -441,11 +450,16 @@ class AddAction(InterfaceAction):
                 accept = True
         if accept and event is not None:
             event.accept()
+        add_as_book = False
         if do_confirm and formats:
-            if not confirm(
+            ok, add_as_book = confirm(
                 _('You have dropped some files onto the book <b>%s</b>. This will'
                   ' add or replace the files for this book. Do you want to proceed?') % db.title(cid, index_is_id=True),
-                'confirm_drop_on_book', parent=self.gui):
+                'confirm_drop_on_book', parent=self.gui,
+                extra_button=ngettext('Add as new book', 'Add as new books', len(formats)))
+            if ok and add_as_book:
+                add_as_book = [path for ext, path in formats]
+            if not ok or add_as_book:
                 formats = []
         for ext, path in formats:
             db.add_format_with_hooks(cid, ext, path, index_is_id=True)
@@ -453,6 +467,8 @@ class AddAction(InterfaceAction):
             self.gui.library_view.model().current_changed(current_idx, current_idx)
         if cover_changed:
             self.gui.refresh_cover_browser()
+        if add_as_book:
+            self.files_dropped(add_as_book)
 
     def __add_filesystem_book(self, paths, allow_device=True):
         if isinstance(paths, string_or_bytes):
@@ -473,7 +489,7 @@ class AddAction(InterfaceAction):
     def add_from_isbn(self, *args):
         from calibre.gui2.dialogs.add_from_isbn import AddFromISBN
         d = AddFromISBN(self.gui)
-        if d.exec_() == d.Accepted and d.books:
+        if d.exec_() == QDialog.DialogCode.Accepted and d.books:
             self.add_isbns(d.books, add_tags=d.set_tags)
 
     def add_books(self, *args):

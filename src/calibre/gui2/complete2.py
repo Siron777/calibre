@@ -1,23 +1,21 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import weakref
-
 from PyQt5.Qt import (
-    QLineEdit, QAbstractListModel, Qt, pyqtSignal, QObject, QKeySequence,
-    QApplication, QListView, QPoint, QModelIndex, QFont, QFontInfo,
+    QLineEdit, QAbstractListModel, Qt, pyqtSignal, QObject, QKeySequence, QAbstractItemView,
+    QApplication, QListView, QPoint, QModelIndex, QEvent,
     QStyleOptionComboBox, QStyle, QComboBox, QTimer)
 try:
     from PyQt5 import sip
 except ImportError:
     import sip
 
-from calibre.constants import isosx, get_osx_version
+from calibre.constants import ismacos
 from calibre.utils.icu import sort_key, primary_startswith, primary_contains
 from calibre.gui2.widgets import EnComboBox, LineEditECM
 from calibre.utils.config import tweaks
@@ -38,8 +36,10 @@ class CompleteModel(QAbstractListModel):  # {{{
         self.current_prefix = ''
 
     def set_items(self, items):
-        items = [unicode_type(x).strip() if self.strip_completion_entries else unicode_type(x) for x in items]
-        items = [x for x in items if x]
+        if self.strip_completion_entries:
+            items = (str(x).strip() for x in items if x)
+        else:
+            items = (str(x) for x in items if x)
         items = tuple(sorted(items, key=self.sort_func))
         self.beginResetModel()
         self.all_items = self.current_items = items
@@ -67,7 +67,7 @@ class CompleteModel(QAbstractListModel):  # {{{
         return len(self.current_items)
 
     def data(self, index, role):
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             try:
                 return self.current_items[index.row()]
             except IndexError:
@@ -86,22 +86,22 @@ class Completer(QListView):  # {{{
     relayout_needed = pyqtSignal()
 
     def __init__(self, completer_widget, max_visible_items=7, sort_func=sort_key, strip_completion_entries=True):
-        QListView.__init__(self)
+        QListView.__init__(self, completer_widget)
         self.disable_popup = False
-        self.completer_widget = weakref.ref(completer_widget)
-        self.setWindowFlags(Qt.Popup)
+        self.setWindowFlags(Qt.WindowType.Popup)
         self.max_visible_items = max_visible_items
-        self.setEditTriggers(self.NoEditTriggers)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setSelectionBehavior(self.SelectRows)
-        self.setSelectionMode(self.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setUniformItemSizes(True)
         self.setAlternatingRowColors(True)
         self.setModel(CompleteModel(self, sort_func=sort_func, strip_completion_entries=strip_completion_entries))
         self.setMouseTracking(True)
         self.activated.connect(self.item_chosen)
         self.pressed.connect(self.item_chosen)
         self.installEventFilter(self)
-        self.setFocusPolicy(Qt.NoFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def hide(self):
         self.setCurrentIndex(QModelIndex())
@@ -111,7 +111,7 @@ class Completer(QListView):  # {{{
         if not self.isVisible():
             return
         self.hide()
-        text = self.model().data(index, Qt.DisplayRole)
+        text = self.model().data(index, Qt.ItemDataRole.DisplayRole)
         self.item_selected.emit(unicode_type(text))
 
     def set_items(self, items):
@@ -145,7 +145,7 @@ class Completer(QListView):  # {{{
             return
         p = self
         m = p.model()
-        widget = self.completer_widget()
+        widget = self.parent()
         if widget is None:
             return
         screen = QApplication.desktop().availableGeometry(widget)
@@ -179,20 +179,12 @@ class Completer(QListView):  # {{{
             self.setCurrentIndex(self.model().index(0))
 
         if not p.isVisible():
-            if isosx and get_osx_version() >= (10, 9, 0):
-                # On mavericks the popup menu seems to use a font smaller than
-                # the widgets font, see for example:
-                # https://bugs.launchpad.net/bugs/1243761
-                fp = QFontInfo(widget.font())
-                f = QFont()
-                f.setPixelSize(fp.pixelSize())
-                self.setFont(f)
             p.show()
 
     def debug_event(self, ev):
         from calibre.gui2 import event_type_name
         print('Event:', event_type_name(ev))
-        if ev.type() in (ev.KeyPress, ev.ShortcutOverride, ev.KeyRelease):
+        if ev.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride, QEvent.Type.KeyRelease):
             print('\tkey:', QKeySequence(ev.key()).toString())
 
     def mouseMoveEvent(self, ev):
@@ -205,7 +197,7 @@ class Completer(QListView):  # {{{
 
     def eventFilter(self, obj, e):
         'Redirect key presses from the popup to the widget'
-        widget = self.completer_widget()
+        widget = self.parent()
         if widget is None or sip.isdeleted(widget):
             return False
         etype = e.type()
@@ -214,20 +206,20 @@ class Completer(QListView):  # {{{
 
         # self.debug_event(e)
 
-        if etype == e.KeyPress:
+        if etype == QEvent.Type.KeyPress:
             try:
                 key = e.key()
             except AttributeError:
                 return QObject.eventFilter(self, obj, e)
-            if key == Qt.Key_Escape:
+            if key == Qt.Key.Key_Escape:
                 self.hide()
                 e.accept()
                 return True
-            if key == Qt.Key_F4 and e.modifiers() & Qt.AltModifier:
+            if key == Qt.Key.Key_F4 and e.modifiers() & Qt.KeyboardModifier.AltModifier:
                 self.hide()
                 e.accept()
                 return True
-            if key in (Qt.Key_Enter, Qt.Key_Return):
+            if key in (Qt.Key.Key_Enter, Qt.Key.Key_Return):
                 # We handle this explicitly because on OS X activated() is
                 # not emitted on pressing Enter.
                 idx = self.currentIndex()
@@ -236,7 +228,7 @@ class Completer(QListView):  # {{{
                 self.hide()
                 e.accept()
                 return True
-            if key == Qt.Key_Tab:
+            if key == Qt.Key.Key_Tab:
                 idx = self.currentIndex()
                 if idx.isValid():
                     self.item_chosen(idx)
@@ -245,11 +237,11 @@ class Completer(QListView):  # {{{
                     self.next_match()
                 e.accept()
                 return True
-            if key in (Qt.Key_PageUp, Qt.Key_PageDown):
+            if key in (Qt.Key.Key_PageUp, Qt.Key.Key_PageDown):
                 # Let the list view handle these keys
                 return False
-            if key in (Qt.Key_Up, Qt.Key_Down):
-                self.next_match(previous=key == Qt.Key_Up)
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+                self.next_match(previous=key == Qt.Key.Key_Up)
                 e.accept()
                 return True
             # Send to widget
@@ -261,28 +253,29 @@ class Completer(QListView):  # {{{
                 self.hide()
             if e.isAccepted():
                 return True
-        elif isosx and etype == e.InputMethodQuery and e.queries() == (Qt.ImHints | Qt.ImEnabled) and self.isVisible():
+        elif ismacos and etype == QEvent.Type.InputMethodQuery and e.queries() == (
+            Qt.InputMethodQuery.ImHints | Qt.InputMethodQuery.ImEnabled) and self.isVisible():
             # In Qt 5 the Esc key causes this event and the line edit does not
             # handle it, which causes the parent dialog to be closed
             # See https://bugreports.qt-project.org/browse/QTBUG-41806
             e.accept()
             return True
-        elif etype == e.MouseButtonPress and hasattr(e, 'globalPos') and not self.rect().contains(self.mapFromGlobal(e.globalPos())):
+        elif etype == QEvent.Type.MouseButtonPress and hasattr(e, 'globalPos') and not self.rect().contains(self.mapFromGlobal(e.globalPos())):
             # A click outside the popup, close it
             if isinstance(widget, QComboBox):
                 # This workaround is needed to ensure clicking on the drop down
                 # arrow of the combobox closes the popup
                 opt = QStyleOptionComboBox()
                 widget.initStyleOption(opt)
-                sc = widget.style().hitTestComplexControl(QStyle.CC_ComboBox, opt, widget.mapFromGlobal(e.globalPos()), widget)
-                if sc == QStyle.SC_ComboBoxArrow:
+                sc = widget.style().hitTestComplexControl(QStyle.ComplexControl.CC_ComboBox, opt, widget.mapFromGlobal(e.globalPos()), widget)
+                if sc == QStyle.SubControl.SC_ComboBoxArrow:
                     QTimer.singleShot(0, self.hide)
                     e.accept()
                     return True
             self.hide()
             e.accept()
             return True
-        elif etype in (e.InputMethod, e.ShortcutOverride):
+        elif etype in (QEvent.Type.InputMethod, QEvent.Type.ShortcutOverride):
             QApplication.sendEvent(widget, e)
         return False
 # }}}
@@ -312,7 +305,7 @@ class LineEdit(QLineEdit, LineEditECM):
 
         self.mcompleter = Completer(completer_widget, sort_func=sort_func, strip_completion_entries=strip_completion_entries)
         self.mcompleter.item_selected.connect(self.completion_selected,
-                type=Qt.QueuedConnection)
+                type=Qt.ConnectionType.QueuedConnection)
         self.mcompleter.relayout_needed.connect(self.relayout)
         self.mcompleter.setFocusProxy(completer_widget)
         self.textEdited.connect(self.text_edited)
@@ -351,8 +344,9 @@ class LineEdit(QLineEdit, LineEditECM):
     def event(self, ev):
         # See https://bugreports.qt.io/browse/QTBUG-46911
         try:
-            if ev.type() == ev.ShortcutOverride and (
-                    ev.key() in (Qt.Key_Left, Qt.Key_Right) and (ev.modifiers() & ~Qt.KeypadModifier) == Qt.ControlModifier):
+            if ev.type() == QEvent.Type.ShortcutOverride and (
+                    ev.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right) and (
+                        ev.modifiers() & ~Qt.KeyboardModifier.KeypadModifier) == Qt.KeyboardModifier.ControlModifier):
                 ev.accept()
         except AttributeError:
             pass
@@ -367,12 +361,12 @@ class LineEdit(QLineEdit, LineEditECM):
             self.mcompleter.hide()
             return
         self.mcompleter.popup(select_first=select_first)
-        self.setFocus(Qt.OtherFocusReason)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
         self.mcompleter.scroll_to(orig)
 
     def relayout(self):
         self.mcompleter.popup()
-        self.setFocus(Qt.OtherFocusReason)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def text_edited(self, *args):
         if self.no_popup:
@@ -518,7 +512,7 @@ class EditWithComplete(EnComboBox):
         except AttributeError:
             return False
         etype = e.type()
-        if self.eat_focus_out and self is obj and etype == e.FocusOut:
+        if self.eat_focus_out and self is obj and etype == QEvent.Type.FocusOut:
             if c.isVisible():
                 return True
         return EnComboBox.eventFilter(self, obj, e)

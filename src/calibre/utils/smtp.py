@@ -1,4 +1,4 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL 3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -12,7 +12,7 @@ This module implements a simple commandline SMTP client that supports:
 
 import sys, traceback, os, socket, encodings.idna as idna
 from calibre import isbytestring
-from calibre.constants import ispy3, iswindows
+from calibre.constants import iswindows
 from polyglot.builtins import unicode_type, as_unicode, native_string_type
 
 
@@ -34,7 +34,13 @@ def safe_localhost():
     # RFC 2821 says we should use the fqdn in the EHLO/HELO verb, and
     # if that can't be calculated, that we should use a domain literal
     # instead (essentially an encoded IP address like [A.B.C.D]).
-    fqdn = decode_fqdn(socket.getfqdn())
+    try:
+        fqdn = decode_fqdn(socket.getfqdn())
+    except UnicodeDecodeError:
+        if not iswindows:
+            raise
+        from calibre_extensions.winutil import get_computer_name
+        fqdn = get_computer_name()
     if '.' in fqdn and fqdn != '.':
         # Some mail servers have problems with non-ascii local hostnames, see
         # https://bugs.launchpad.net/bugs/1256549
@@ -150,7 +156,7 @@ def get_smtp_class(use_ssl=False, debuglevel=0):
     # but there is no way to set debuglevel before connect() is called
     import polyglot.smtplib as smtplib
     cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
-    bases = (cls,) if ispy3 else (cls, object)
+    bases = (cls,)
     return type(native_string_type('SMTP'), bases, {native_string_type('debuglevel'): debuglevel})
 
 
@@ -177,8 +183,6 @@ def sendmail(msg, from_, to, localhost=None, verbose=0, timeout=None,
         s.starttls(context=context)
         s.ehlo()
     if username is not None and password is not None:
-        if encryption == 'SSL' and not ispy3:
-            s.sock = s.file.sslobj
         s.login(username, password)
     ret = None
     try:

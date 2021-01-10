@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
@@ -40,8 +40,8 @@ class PluginWidget(Widget, Ui_Form):
             self.opt_pdf_standard_font.addItem(x)
 
         self.initialize_options(get_option, get_help, db, book_id)
-        self.layout().setFieldGrowthPolicy(self.layout().ExpandingFieldsGrow)
-        self.template_box.layout().setFieldGrowthPolicy(self.layout().AllNonFixedFieldsGrow)
+        self.layout().setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.template_box.layout().setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.profile_size_toggled()
 
     def profile_size_toggled(self):

@@ -1,8 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2011, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 from PyQt5.Qt import (QDialog, QLabel, QVBoxLayout, QDialogButtonBox,
         QProgressBar, QSize, QTimer, pyqtSignal, Qt)
@@ -32,14 +31,14 @@ class DBRestore(QDialog):
         self.msg = QLabel('')
         self.l.addWidget(self.msg)
         self.msg.setWordWrap(True)
-        self.bb = QDialogButtonBox(QDialogButtonBox.Cancel)
+        self.bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self.l.addWidget(self.bb)
         self.bb.rejected.connect(self.confirm_cancel)
         self.resize(self.sizeHint() + QSize(100, 50))
         self.error = None
         self.rejected = False
         self.library_path = library_path
-        self.update_signal.connect(self.do_update, type=Qt.QueuedConnection)
+        self.update_signal.connect(self.do_update, type=Qt.ConnectionType.QueuedConnection)
 
         from calibre.db.restore import Restore
         self.restorer = Restore(library_path, self)

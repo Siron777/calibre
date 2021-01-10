@@ -1,34 +1,25 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys
-from polyglot.builtins import filter
-
-is_narrow_build = sys.maxunicode < 0x10ffff
-
 # Setup code {{{
 import codecs
+import sys
 
-from calibre.constants import plugins
 from calibre.utils.config_base import tweaks
-from polyglot.builtins import unicode_type, cmp
+from calibre_extensions import icu as _icu
+from polyglot.builtins import cmp, filter, unicode_type
 
 _locale = _collator = _primary_collator = _sort_collator = _numeric_collator = _case_sensitive_collator = None
 cmp
 
-_none = u''
+_none = ''
 _none2 = b''
 _cmap = {}
 
-_icu, err = plugins['icu']
-if _icu is None:
-    raise RuntimeError('Failed to load icu with error: %s' % err)
-del err
 icu_unicode_version = getattr(_icu, 'unicode_version', None)
 _nmodes = {m:getattr(_icu, m) for m in ('NFC', 'NFD', 'NFKC', 'NFKD')}
 
@@ -299,9 +290,7 @@ def partition_by_first_letter(items, reverse=False, key=lambda x:x):
         c = icu_upper(key(item) or ' ')
         ordnum, ordlen = collation_order(c)
         if last_ordnum != ordnum:
-            if not is_narrow_build:
-                ordlen = 1
-            last_c = c[0:ordlen]
+            last_c = c[0:1]
             last_ordnum = ordnum
         try:
             ans[last_c].append(item)
@@ -311,10 +300,10 @@ def partition_by_first_letter(items, reverse=False, key=lambda x:x):
 
 
 # Return the number of unicode codepoints in a string
-string_length = _icu.string_length if is_narrow_build else len
+string_length = len
 
 # Return the number of UTF-16 codepoints in a string
-utf16_length = len if is_narrow_build else _icu.utf16_length
+utf16_length = _icu.utf16_length
 
 ################################################################################
 

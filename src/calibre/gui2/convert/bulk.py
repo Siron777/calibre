@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
@@ -7,7 +7,7 @@ __docformat__ = 'restructuredtext en'
 
 import shutil
 
-from PyQt5.Qt import QModelIndex, QDialog, QApplication
+from PyQt5.Qt import QModelIndex, QDialog, QApplication, QDialogButtonBox
 
 from calibre.gui2.convert.single import Config, GroupModel, gprefs
 from calibre.gui2.convert.look_and_feel import LookAndFeelWidget
@@ -27,10 +27,14 @@ from polyglot.builtins import unicode_type, native_string_type
 class BulkConfig(Config):
 
     def __init__(self, parent, db, preferred_output_format=None,
-            has_saved_settings=True):
+            has_saved_settings=True, book_ids=()):
         QDialog.__init__(self, parent)
         self.widgets = []
         self.setupUi()
+        try:
+            self.num_of_books = len(book_ids)
+        except Exception:
+            self.num_of_books = 1
 
         self.setup_output_formats(db, preferred_output_format)
         self.db = db
@@ -51,7 +55,7 @@ class BulkConfig(Config):
         self.groups.activated[(QModelIndex)].connect(self.show_pane)
         self.groups.clicked[(QModelIndex)].connect(self.show_pane)
         self.groups.entered[(QModelIndex)].connect(self.show_group_help)
-        rb = self.buttonBox.button(self.buttonBox.RestoreDefaults)
+        rb = self.buttonBox.button(QDialogButtonBox.StandardButton.RestoreDefaults)
         rb.setVisible(False)
         self.groups.setMouseTracking(True)
         if not has_saved_settings:
@@ -82,7 +86,9 @@ class BulkConfig(Config):
             return cls(self, self.plumber.get_option_by_name,
                 self.plumber.get_option_help, self.db)
 
-        self.setWindowTitle(_('Bulk convert'))
+        self.setWindowTitle(
+            ngettext(_('Bulk convert one book'), _('Bulk convert {} books'), self.num_of_books).format(self.num_of_books)
+        )
         lf = widget_factory(LookAndFeelWidget)
         hw = widget_factory(HeuristicsWidget)
         sr = widget_factory(SearchAndReplaceWidget)

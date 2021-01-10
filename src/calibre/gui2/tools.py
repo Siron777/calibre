@@ -1,5 +1,5 @@
-#!/usr/bin/env  python2
-from __future__ import absolute_import, division, print_function, unicode_literals
+#!/usr/bin/env python
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
@@ -45,11 +45,11 @@ def convert_single_ebook(parent, db, book_ids, auto_conversion=False,  # {{{
 
             if auto_conversion:
                 d.accept()
-                result = QDialog.Accepted
+                result = QDialog.DialogCode.Accepted
             else:
                 result = d.exec_()
 
-            if result == QDialog.Accepted:
+            if result == QDialog.DialogCode.Accepted:
                 # if not convert_existing(parent, db, [book_id], d.output_format):
                 #    continue
 
@@ -142,8 +142,8 @@ def convert_bulk_ebook(parent, queue, db, book_ids, out_format=None, args=[]):
     has_saved_settings = db.has_conversion_options(book_ids)
 
     d = BulkConfig(parent, db, out_format,
-            has_saved_settings=has_saved_settings)
-    if d.exec_() != QDialog.Accepted:
+            has_saved_settings=has_saved_settings, book_ids=book_ids)
+    if d.exec_() != QDialog.DialogCode.Accepted:
         return None
 
     output_format = d.output_format
@@ -327,7 +327,7 @@ def generate_catalog(parent, dbspec, ids, device_manager, db):  # {{{
     # Build the Catalog dialog in gui2.dialogs.catalog
     d = Catalog(parent, dbspec, ids, db)
 
-    if d.exec_() != d.Accepted:
+    if d.exec_() != QDialog.DialogCode.Accepted:
         return None
 
     # Create the output file

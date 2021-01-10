@@ -29,6 +29,7 @@ from utils import (
     safe_set_inner_html, sandboxed_html
 )
 from widgets import create_button, create_spinner
+from utils import human_readable
 
 bd_counter = 0
 
@@ -134,7 +135,8 @@ def add_stars_to(stars, val, allow_half_stars):
 window.addEventListener('resize', debounce(adjust_all_iframes, 250))
 
 def adjusting_sandboxed_html(html, extra_css):
-    css =  'html, body {{ overflow: hidden; color: {} }}'.format(get_color('window-foreground'))
+    color = get_color_as_rgba('window-foreground')
+    css =  f'html, body {{ overflow: hidden; color: rgba({color[0]}, {color[1]}, {color[2]}, {color[3]}) }}'
     if extra_css:
         css += '\n\n' + extra_css
     # allow-same-origin is needed for resizing and allow-popups is needed for
@@ -169,15 +171,19 @@ def render_metadata(mi, table, book_id, iframe_css):  # {{{
         fields = filter(allowed_fields, fields)
     comments = v'[]'
 
-    def add_row(name, val, is_searchable=False, is_html=False, join=None):
+    def add_row(name, val, is_searchable=False, is_html=False, join=None, search_text=None):
         if val is undefined or val is None:
             return
         def add_val(v):
             if not v.appendChild:
                 v += ''
             if is_searchable:
+                text_rep = search_text or v
                 table.lastChild.lastChild.appendChild(E.a(
-                    title=_('Click to see books with {0}: {1}').format(name, v), class_='blue-link', href=href_for_search(is_searchable, v), v))
+                    v,
+                    title=_('Click to see books with {0}: {1}').format(name, text_rep), class_='blue-link',
+                    href=href_for_search(is_searchable, text_rep)
+                ))
             else:
                 if v.appendChild:
                     table.lastChild.lastChild.appendChild(v)
@@ -232,7 +238,7 @@ def render_metadata(mi, table, book_id, iframe_css):  # {{{
         val = int(val or 0)
         if val > 0:
             add_stars_to(stars, val, fm.display?.allow_half_stars)
-            add_row(name, stars)
+            add_row(name, stars, is_searchable=field, search_text=val/2 + '')
 
     def process_identifiers(field, fm, name, val):
         if val:
@@ -249,6 +255,13 @@ def render_metadata(mi, table, book_id, iframe_css):  # {{{
                         td.appendChild(E.a(class_='blue-link', title='{}:{}'.format(k, idval), target='_new', href=x[1], x[0]))
                 if td.childNodes.length:
                     table.appendChild(E.tr(E.td(name + ':'), td))
+
+    def process_size(field, fm, name, val):
+        if val:
+            try:
+                add_row(name, human_readable(int(val)))
+            except:
+                add_row(name, val+'')
 
     def process_languages(field, fm, name, val):
         if val and val.length:
@@ -313,6 +326,9 @@ def render_metadata(mi, table, book_id, iframe_css):  # {{{
                     add_row(name, val)
                     return
                 val = E.span(val).outerHTML
+            else:
+                if field is 'comments' and '<' not in val:
+                    val = '\n'.join(['<p class="description">{}</p>'.format(x.pyreplace('\n', '<br>')) for x in val.split('\n\n')])
             if hp is 'side':
                 add_row(name, val, is_html=True)
                 return
@@ -333,6 +349,8 @@ def render_metadata(mi, table, book_id, iframe_css):  # {{{
             func = process_publisher
         elif field is 'languages':
             func = process_languages
+        elif field is 'size':
+            func = process_size
         elif datatype is 'datetime':
             func = process_datetime
         elif datatype is 'series':
@@ -449,6 +467,7 @@ def next_book(book_id, delta):
 
 def render_book(container_id, book_id):
     render_book.book_id = book_id
+    is_random = parse_url_params().book_id is '0'
     c = document.getElementById(container_id)
     if not c:
         return
@@ -456,19 +475,23 @@ def render_book(container_id, book_id):
     render_book.title = metadata.title
     set_title(c, metadata.title)
     authors = metadata.authors.join(' & ') if metadata.authors else _('Unknown')
-    alt = _('{} by {}\nClick to read').format(metadata.title, authors)
-    bsrgb = get_color_as_rgba('button-start')
+    alt = _('{} by {}\n\nClick to read').format(metadata.title, authors)
+    border_radius = 20
+    button_style = f'cursor: pointer; border-radius: {border_radius//5}px;'
+    button_style += 'color: #ccc; background-color:rgba(0, 0, 0, 0.75);'
+    button_style += 'display: flex; justify-content: center; align-items: center; padding: 2px;'
+    if is_random:
+        button_style += 'display: none;'
 
     def prev_next_button(is_prev):
         return E.div(
-            style=f'cursor: pointer; border-radius: {border_radius//5}px; background-color:rgba({bsrgb[0]}, {bsrgb[1]}, {bsrgb[2]}, 0.75);',
+            style=button_style,
             title=_('Previous book') if is_prev else _('Next book'),
             class_='next-book-button',
             svgicon('chevron-left' if is_prev else 'chevron-right'),
             onclick=next_book.bind(None, book_id, (-1 if is_prev else 1))
         )
 
-    border_radius = 20
     imgdiv = E.div(style='position: relative',
         E.img(
             alt=alt, title=alt, data_title=metadata.title, data_authors=authors,
@@ -517,7 +540,9 @@ def add_top_bar_buttons(container_id):
         add_button(container, 'trash', action=delete_book, tooltip=_('Delete this book'))
         book_id = parse_url_params().book_id
         if book_id is '0':
-            add_button(container, 'random', def(): fetch_metadata(container_id, 0, proceed_after_succesful_fetch_metadata);)
+            add_button(container, 'random', tooltip=_('Show a random book'), action=def():
+                fetch_metadata(container_id, 0, proceed_after_succesful_fetch_metadata)
+            )
         add_button(container, 'ellipsis-v', action=show_subsequent_panel.bind(None, 'more_actions'), tooltip=_('More actions'))
 
 
@@ -619,6 +644,9 @@ def onkeydown(container_id, close_action, ev):
             elif ev.key is 'Escape':
                 ev.preventDefault(), ev.stopPropagation()
                 close_action()
+            elif ev.key is 'Delete':
+                ev.preventDefault(), ev.stopPropagation()
+                delete_book()
 
 
 def init(container_id):
@@ -642,19 +670,19 @@ def init(container_id):
 
 def show_subsequent_panel(name, replace=False):
     q = parse_url_params()
-    q.book_id = (read_book.book_id or q.book_id) + ''
+    q.book_id = (render_book.book_id or q.book_id) + ''
     show_panel('book_details^' + name, query=q, replace=replace)
 
 
 def edit_metadata():
     q = parse_url_params()
-    q.book_id = (read_book.book_id or q.book_id) + ''
+    q.book_id = (render_book.book_id or q.book_id) + ''
     show_panel('edit_metadata', query=q, replace=False)
 
 
 def convert_book():
     q = parse_url_params()
-    q.book_id = (read_book.book_id or q.book_id) + ''
+    q.book_id = (render_book.book_id or q.book_id) + ''
     show_panel('convert_book', query=q, replace=False)
 
 

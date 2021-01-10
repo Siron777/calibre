@@ -1,40 +1,50 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, traceback, random, shutil, operator
+import operator
+import os
+import random
+import shutil
+import sys
+import traceback
+from collections import MutableSet, Set, defaultdict
+from functools import partial, wraps
 from io import BytesIO
-from collections import defaultdict, Set, MutableSet
-from functools import wraps, partial
-from polyglot.builtins import iteritems, itervalues, unicode_type, zip, string_or_bytes, cmp
 from time import time
 
-from calibre import isbytestring, as_unicode
+from calibre import as_unicode, isbytestring
 from calibre.constants import iswindows, preferred_encoding
-from calibre.customize.ui import run_plugins_on_import, run_plugins_on_postimport, run_plugins_on_postadd
+from calibre.customize.ui import (
+    run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postimport
+)
 from calibre.db import SPOOL_SIZE, _get_next_series_num_for_list
+from calibre.db.annotations import merge_annotations
 from calibre.db.categories import get_categories
-from calibre.db.locking import create_locks, DowngradeLockError, SafeReadLock
-from calibre.db.errors import NoSuchFormat, NoSuchBook
-from calibre.db.fields import create_field, IDENTITY, InvalidLinkTable
+from calibre.db.errors import NoSuchBook, NoSuchFormat
+from calibre.db.fields import IDENTITY, InvalidLinkTable, create_field
+from calibre.db.lazy import FormatMetadata, FormatsList, ProxyMetadata
+from calibre.db.locking import DowngradeLockError, SafeReadLock, create_locks
 from calibre.db.search import Search
 from calibre.db.tables import VirtualTable
+from calibre.db.utils import type_safe_sort_key_function
 from calibre.db.write import get_series_values, uniq
-from calibre.db.lazy import FormatMetadata, FormatsList, ProxyMetadata
 from calibre.ebooks import check_ebook_format
-from calibre.ebooks.metadata import string_to_authors, author_to_author_sort
+from calibre.ebooks.metadata import author_to_author_sort, string_to_authors
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
-from calibre.ptempfile import (base_dir, PersistentTemporaryFile,
-                               SpooledTemporaryFile)
+from calibre.ptempfile import PersistentTemporaryFile, SpooledTemporaryFile, base_dir
 from calibre.utils.config import prefs, tweaks
-from calibre.utils.date import now as nowf, utcnow, UNDEFINED_DATE
+from calibre.utils.date import UNDEFINED_DATE, now as nowf, utcnow
 from calibre.utils.icu import sort_key
 from calibre.utils.localization import canonicalize_lang
+from polyglot.builtins import (
+    cmp, iteritems, itervalues, string_or_bytes, unicode_type, zip
+)
 
 
 def api(f):
@@ -92,6 +102,22 @@ def _add_newbook_tag(mi):
                     mi.tags.append(tag)
 
 
+def _add_default_custom_column_values(mi, fm):
+    cols = fm.custom_field_metadata(include_composites=False)
+    for cc,col in iteritems(cols):
+        dv = col['display'].get('default_value', None)
+        try:
+            if dv is not None:
+                if not mi.get_user_metadata(cc, make_copy=False):
+                    mi.set_user_metadata(cc, col)
+                dt = col['datatype']
+                if dt == 'datetime' and icu_lower(dv) == 'now':
+                    dv = nowf()
+                mi.set(cc, dv)
+        except:
+            traceback.print_exc()
+
+
 dynamic_category_preferences = frozenset({'grouped_search_make_user_categories', 'grouped_search_terms', 'user_categories'})
 
 
@@ -145,6 +171,10 @@ class Cache(object):
         return self.backend.library_id
 
     @property
+    def dbpath(self):
+        return self.backend.dbpath
+
+    @property
     def safe_read_lock(self):
         ''' A safe read lock is a lock that does nothing if the thread already
         has a write lock, otherwise it acquires a read lock. This is necessary
@@ -163,7 +193,7 @@ class Cache(object):
     @write_api
     def ensure_has_search_category(self, fail_on_existing=True):
         if len(self._search_api.saved_searches.names()) > 0:
-            self.field_metadata.add_search_category(label='search', name=_('Searches'), fail_on_existing=fail_on_existing)
+            self.field_metadata.add_search_category(label='search', name=_('Saved searches'), fail_on_existing=fail_on_existing)
 
     def _initialize_dynamic_categories(self):
         # Reconstruct the user categories, putting them into field_metadata
@@ -196,8 +226,8 @@ class Cache(object):
 
     @write_api
     def initialize_dynamic(self):
-        self.dirtied_cache = {x:i for i, (x,) in enumerate(
-            self.backend.execute('SELECT book FROM metadata_dirtied'))}
+        self.backend.dirty_books_with_dirtied_annotations()
+        self.dirtied_cache = {x:i for i, x in enumerate(self.backend.dirtied_books())}
         if self.dirtied_cache:
             self.dirtied_sequence = max(itervalues(self.dirtied_cache))+1
         self._initialize_dynamic_categories()
@@ -493,7 +523,7 @@ class Cache(object):
             return frozenset(self.fields[field].table.col_book_map)
 
         try:
-            return frozenset(itervalues(self.fields[field].table.id_map))
+            return frozenset(self.fields[field].table.id_map.values())
         except AttributeError:
             raise ValueError('%s is not a many-one or many-many field' % field)
 
@@ -577,7 +607,8 @@ class Cache(object):
         if not fmt:
             return {}
         fmt = fmt.upper()
-        if allow_cache:
+        # allow_cache and update_db are mutually exclusive. Give priority to update_db
+        if allow_cache and not update_db:
             x = self.format_metadata_cache[book_id].get(fmt, None)
             if x is not None:
                 return x
@@ -606,13 +637,23 @@ class Cache(object):
         return {fmt:field.format_fname(book_id, fmt) for fmt in fmts}
 
     @read_api
-    def pref(self, name, default=None):
+    def format_db_size(self, book_id, fmt):
+        field = self.fields['formats']
+        return field.format_size(book_id, fmt)
+
+    @read_api
+    def pref(self, name, default=None, namespace=None):
         ' Return the value for the specified preference or the value specified as ``default`` if the preference is not set. '
+        if namespace is not None:
+            return self.backend.prefs.get_namespaced(namespace, name, default)
         return self.backend.prefs.get(name, default)
 
     @write_api
-    def set_pref(self, name, val):
+    def set_pref(self, name, val, namespace=None):
         ' Set the specified preference to the specified value. See also :meth:`pref`. '
+        if namespace is not None:
+            self.backend.prefs.set_namespaced(namespace, name, val)
+            return
         self.backend.prefs.set(name, val)
         if name == 'grouped_search_terms':
             self._clear_search_caches()
@@ -953,8 +994,17 @@ class Cache(object):
         fields = uniq(fields, operator.itemgetter(0))
 
         if len(fields) == 1:
-            return sorted(ids_to_sort, key=sort_key_func(fields[0][0]),
-                          reverse=not fields[0][1])
+            keyfunc = sort_key_func(fields[0][0])
+            reverse = not fields[0][1]
+            try:
+                return sorted(ids_to_sort, key=keyfunc, reverse=reverse)
+            except Exception as err:
+                print('Failed to sort database on field:', fields[0][0], 'with error:', err, file=sys.stderr)
+                try:
+                    return sorted(ids_to_sort, key=type_safe_sort_key_function(keyfunc), reverse=reverse)
+                except Exception as err:
+                    print('Failed to type-safe sort database on field:', fields[0][0], 'with error:', err, file=sys.stderr)
+                    return sorted(ids_to_sort, reverse=reverse)
         sort_key_funcs = tuple(sort_key_func(field) for field, order in fields)
         orders = tuple(1 if order else -1 for _, order in fields)
         Lazy = object()  # Lazy load the sort keys for sub-sort fields
@@ -1027,6 +1077,12 @@ class Cache(object):
             return frozenset(self._search('', vl))
         return frozenset(self._search('', search_restriction))
 
+    @read_api
+    def number_of_books_in_virtual_library(self, vl=None, search_restriction=None):
+        if not vl and not search_restriction:
+            return len(self.fields['uuid'].table.book_col_map)
+        return len(self.books_in_virtual_library(vl, search_restriction))
+
     @api
     def get_categories(self, sort='name', book_ids=None, already_fixed=None,
                        first_letter_sort=False):
@@ -1064,17 +1120,26 @@ class Cache(object):
             self.dirtied_sequence = max(itervalues(already_dirtied)) + 1
         self.dirtied_cache.update(already_dirtied)
         if new_dirtied:
-            self.backend.executemany('INSERT OR IGNORE INTO metadata_dirtied (book) VALUES (?)',
-                                    ((x,) for x in new_dirtied))
+            self.backend.dirty_books(new_dirtied)
             new_dirtied = {book_id:self.dirtied_sequence+i for i, book_id in enumerate(new_dirtied)}
             self.dirtied_sequence = max(itervalues(new_dirtied)) + 1
             self.dirtied_cache.update(new_dirtied)
 
     @write_api
     def commit_dirty_cache(self):
-        book_ids = [(x,) for x in self.dirtied_cache]
-        if book_ids:
-            self.backend.executemany('INSERT OR IGNORE INTO metadata_dirtied (book) VALUES (?)', book_ids)
+        if self.dirtied_cache:
+            self.backend.dirty_books(self.dirtied_cache)
+
+    @write_api
+    def check_dirtied_annotations(self):
+        if not self.backend.dirty_books_with_dirtied_annotations():
+            return
+        book_ids = set(self.backend.dirtied_books())
+        new_dirtied = book_ids - set(self.dirtied_cache)
+        if new_dirtied:
+            new_dirtied = {book_id:self.dirtied_sequence+i for i, book_id in enumerate(new_dirtied)}
+            self.dirtied_sequence = max(itervalues(new_dirtied)) + 1
+            self.dirtied_cache.update(new_dirtied)
 
     @write_api
     def set_field(self, name, book_id_to_val_map, allow_case_change=True, do_path_update=True):
@@ -1160,6 +1225,7 @@ class Cache(object):
                     # no harm done. This way no need to call dirtied when
                     # cover is set/removed
                     mi.cover = 'cover.jpg'
+                    mi.all_annotations = self._all_annotations_for_book(book_id)
             except:
                 # This almost certainly means that the book has been deleted while
                 # the backup operation sat in the queue.
@@ -1173,8 +1239,7 @@ class Cache(object):
         # The last step is clearing the indicator
         dc_sequence = self.dirtied_cache.get(book_id, None)
         if dc_sequence is None or sequence is None or dc_sequence == sequence:
-            self.backend.execute('DELETE FROM metadata_dirtied WHERE book=?',
-                    (book_id,))
+            self.backend.mark_book_as_clean(book_id)
             self.dirtied_cache.pop(book_id, None)
 
     @write_api
@@ -1297,6 +1362,7 @@ class Cache(object):
         if set_title and mi.title:
             path_changed = True
             set_field('title', mi.title)
+        authors_changed = False
         if set_authors:
             path_changed = True
             if not mi.authors:
@@ -1305,6 +1371,7 @@ class Cache(object):
             for a in mi.authors:
                 authors += string_to_authors(a)
             set_field('authors', authors)
+            authors_changed = True
 
         if path_changed:
             self._update_path({book_id})
@@ -1339,7 +1406,13 @@ class Cache(object):
                     if val is not None:
                         protected_set_field(field, val)
 
-                for field in ('author_sort', 'publisher', 'series', 'tags', 'comments',
+                val = mi.get('author_sort', None)
+                if authors_changed and (not val or mi.is_null('author_sort')):
+                    val = self._author_sort_from_authors(mi.authors)
+                if authors_changed or (force_changes and val is not None) or not mi.is_null('author_sort'):
+                    protected_set_field('author_sort', val)
+
+                for field in ('publisher', 'series', 'tags', 'comments',
                     'languages', 'pubdate'):
                     val = mi.get(field, None)
                     if (force_changes and val is not None) or not mi.is_null(field):
@@ -1557,6 +1630,7 @@ class Cache(object):
             mi.tags = list(mi.tags)
         if apply_import_tags:
             _add_newbook_tag(mi)
+            _add_default_custom_column_values(mi, self.field_metadata)
         if not add_duplicates and self._has_book(mi):
             return
         series_index = (self._get_next_series_num_for(mi.series) if mi.series_index is None else mi.series_index)
@@ -1569,7 +1643,7 @@ class Cache(object):
                 series_index = 1.0
         if not mi.authors:
             mi.authors = (_('Unknown'),)
-        aus = mi.author_sort if mi.author_sort else self._author_sort_from_authors(mi.authors)
+        aus = mi.author_sort if not mi.is_null('author_sort') else self._author_sort_from_authors(mi.authors)
         mi.title = mi.title or _('Unknown')
         if isbytestring(aus):
             aus = aus.decode(preferred_encoding, 'replace')
@@ -1842,6 +1916,14 @@ class Cache(object):
         self.clear_composite_caches()
 
     @read_api
+    def books_matching_device_book(self, lpath):
+        ans = set()
+        for book_id, (_, _, _, _, lpaths) in self.fields['ondevice'].cache.items():
+            if lpath in lpaths:
+                ans.add(book_id)
+        return ans
+
+    @read_api
     def tags_older_than(self, tag, delta=None, must_have_tag=None, must_have_authors=None):
         '''
         Return the ids of all books having the tag ``tag`` that are older than
@@ -2086,8 +2168,12 @@ class Cache(object):
                 traceback.print_exc()
         self.backend.close()
 
+    @property
+    def is_closed(self):
+        return self.backend.is_closed
+
     @write_api
-    def restore_book(self, book_id, mi, last_modified, path, formats):
+    def restore_book(self, book_id, mi, last_modified, path, formats, annotations=()):
         ''' Restore the book entry in the database for a book that already exists on the filesystem '''
         cover = mi.cover
         mi.cover = None
@@ -2097,6 +2183,8 @@ class Cache(object):
         if cover and os.path.exists(cover):
             self._set_field('cover', {book_id:1})
         self.backend.restore_book(book_id, path, formats)
+        if annotations:
+            self._restore_annotations(book_id, annotations)
 
     @read_api
     def virtual_libraries_for_books(self, book_ids):
@@ -2148,9 +2236,9 @@ class Cache(object):
     def embed_metadata(self, book_ids, only_fmts=None, report_error=None, report_progress=None):
         ''' Update metadata in all formats of the specified book_ids to current metadata in the database. '''
         field = self.fields['formats']
-        from calibre.ebooks.metadata.opf2 import pretty_print
         from calibre.customize.ui import apply_null_metadata
         from calibre.ebooks.metadata.meta import set_metadata
+        from calibre.ebooks.metadata.opf2 import pretty_print
         if only_fmts:
             only_fmts = {f.lower() for f in only_fmts}
 
@@ -2247,6 +2335,90 @@ class Cache(object):
         exporter.set_metadata(library_key, metadata)
         if progress is not None:
             progress(_('Completed'), total, total)
+
+    @read_api
+    def annotations_map_for_book(self, book_id, fmt, user_type='local', user='viewer'):
+        ans = {}
+        for annot in self.backend.annotations_for_book(book_id, fmt, user_type, user):
+            ans.setdefault(annot['type'], []).append(annot)
+        return ans
+
+    @read_api
+    def all_annotations_for_book(self, book_id):
+        return tuple(self.backend.all_annotations_for_book(book_id))
+
+    @read_api
+    def annotation_count_for_book(self, book_id):
+        return self.backend.annotation_count_for_book(book_id)
+
+    @read_api
+    def all_annotation_users(self):
+        return tuple(self.backend.all_annotation_users())
+
+    @read_api
+    def all_annotation_types(self):
+        return tuple(self.backend.all_annotation_types())
+
+    @read_api
+    def all_annotations(self, restrict_to_user=None, limit=None, annotation_type=None, ignore_removed=False, restrict_to_book_ids=None):
+        return tuple(self.backend.all_annotations(restrict_to_user, limit, annotation_type, ignore_removed, restrict_to_book_ids))
+
+    @read_api
+    def search_annotations(
+        self,
+        fts_engine_query,
+        use_stemming=True,
+        highlight_start=None,
+        highlight_end=None,
+        snippet_size=None,
+        annotation_type=None,
+        restrict_to_book_ids=None,
+        restrict_to_user=None,
+        ignore_removed=False
+    ):
+        return tuple(self.backend.search_annotations(
+            fts_engine_query, use_stemming, highlight_start, highlight_end,
+            snippet_size, annotation_type, restrict_to_book_ids, restrict_to_user,
+            ignore_removed
+        ))
+
+    @write_api
+    def delete_annotations(self, annot_ids):
+        self.backend.delete_annotations(annot_ids)
+
+    @write_api
+    def update_annotations(self, annot_id_map):
+        self.backend.update_annotations(annot_id_map)
+
+    @write_api
+    def restore_annotations(self, book_id, annotations):
+        from calibre.utils.date import EPOCH
+        from calibre.utils.iso8601 import parse_iso8601
+        umap = defaultdict(list)
+        for adata in annotations:
+            key = adata['user_type'], adata['user'], adata['format']
+            a = adata['annotation']
+            ts = (parse_iso8601(a['timestamp']) - EPOCH).total_seconds()
+            umap[key].append((a, ts))
+        for (user_type, user, fmt), annots_list in iteritems(umap):
+            self._set_annotations_for_book(book_id, fmt, annots_list, user_type=user_type, user=user)
+
+    @write_api
+    def set_annotations_for_book(self, book_id, fmt, annots_list, user_type='local', user='viewer'):
+        self.backend.set_annotations_for_book(book_id, fmt, annots_list, user_type, user)
+
+    @write_api
+    def merge_annotations_for_book(self, book_id, fmt, annots_list, user_type='local', user='viewer'):
+        from calibre.utils.date import EPOCH
+        from calibre.utils.iso8601 import parse_iso8601
+        amap = self._annotations_map_for_book(book_id, fmt, user_type=user_type, user=user)
+        merge_annotations(annots_list, amap)
+        alist = []
+        for val in itervalues(amap):
+            for annot in val:
+                ts = (parse_iso8601(annot['timestamp']) - EPOCH).total_seconds()
+                alist.append((annot, ts))
+        self._set_annotations_for_book(book_id, fmt, alist, user_type=user_type, user=user)
 
 
 def import_library(library_key, importer, library_path, progress=None, abort=None):

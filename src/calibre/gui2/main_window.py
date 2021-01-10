@@ -1,4 +1,4 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -7,11 +7,11 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 import sys, gc, weakref
 
 from PyQt5.Qt import (QMainWindow, QTimer, QAction, QMenu, QMenuBar, QIcon,
-                      QObject)
+                      QObject, QKeySequence)
 from calibre.utils.config import OptionParser
 from calibre.gui2 import error_dialog
-from calibre import prints, force_unicode, as_unicode
-from polyglot.io import PolyglotBytesIO
+from calibre import prints, as_unicode, prepare_string_for_xml
+from polyglot.io import PolyglotStringIO
 
 
 def option_parser(usage='''\
@@ -107,8 +107,8 @@ class MainWindow(QMainWindow):
     def get_menubar_actions(cls):
         preferences_action = QAction(QIcon(I('config.png')), _('&Preferences'), None)
         quit_action        = QAction(QIcon(I('window-close.png')), _('&Quit'), None)
-        preferences_action.setMenuRole(QAction.PreferencesRole)
-        quit_action.setMenuRole(QAction.QuitRole)
+        preferences_action.setMenuRole(QAction.MenuRole.PreferencesRole)
+        quit_action.setMenuRole(QAction.MenuRole.QuitRole)
         return preferences_action, quit_action
 
     @property
@@ -134,7 +134,7 @@ class MainWindow(QMainWindow):
             return
         import traceback
         try:
-            sio = PolyglotBytesIO(errors='replace')
+            sio = PolyglotStringIO(errors='replace')
             try:
                 from calibre.debug import print_basic_debug_info
                 print_basic_debug_info(out=sio)
@@ -144,11 +144,10 @@ class MainWindow(QMainWindow):
             if getattr(value, 'locking_debug_msg', None):
                 prints(value.locking_debug_msg, file=sio)
             fe = sio.getvalue()
-            prints(fe, file=sys.stderr)
-            fe = force_unicode(fe)
-            msg = '<b>%s</b>:'%exc_type.__name__ + as_unicode(value)
+            msg = '<b>%s</b>:'%exc_type.__name__ + prepare_string_for_xml(as_unicode(value))
             error_dialog(self, _('Unhandled exception'), msg, det_msg=fe,
                     show=True)
+            prints(fe, file=sys.stderr)
         except BaseException:
             pass
         except:
@@ -166,7 +165,7 @@ def clone_menu(menu):
             ans.setSeparator(True)
             return ans
         sc = ac.shortcut()
-        sc = '' if sc.isEmpty() else sc.toString(sc.NativeText)
+        sc = '' if sc.isEmpty() else sc.toString(QKeySequence.SequenceFormat.NativeText)
         text = ac.text()
         if '\t' not in text:
             text += '\t' + sc

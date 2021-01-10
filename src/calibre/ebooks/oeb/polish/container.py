@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 # License: GPLv3 Copyright: 2013, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 import errno
 import hashlib
@@ -10,14 +10,12 @@ import os
 import re
 import shutil
 import sys
-import time
 import unicodedata
 import uuid
 from collections import defaultdict
+from css_parser import getUrls, replaceUrls
 from io import BytesIO
 from itertools import count
-
-from css_parser import getUrls, replaceUrls
 
 from calibre import CurrentDir, walk
 from calibre.constants import iswindows
@@ -48,7 +46,7 @@ from calibre.ebooks.oeb.polish.utils import (
     CommentFinder, PositionFinder, guess_type, parse_css
 )
 from calibre.ptempfile import PersistentTemporaryDirectory, PersistentTemporaryFile
-from calibre.utils.filenames import hardlink_file, nlinks_file
+from calibre.utils.filenames import hardlink_file, nlinks_file, retry_on_fail
 from calibre.utils.ipc.simple_worker import WorkerError, fork_job
 from calibre.utils.logging import default_log
 from calibre.utils.xml_parse import safe_xml_fromstring
@@ -253,6 +251,10 @@ class Container(ContainerBase):  # {{{
     SUPPORTS_TITLEPAGES = True
     SUPPORTS_FILENAMES = True
 
+    @property
+    def book_type_for_display(self):
+        return self.book_type.upper()
+
     def __init__(self, rootpath, opfpath, log, clone_data=None):
         ContainerBase.__init__(self, log)
         self.root = clone_data['root'] if clone_data is not None else os.path.abspath(rootpath)
@@ -274,6 +276,7 @@ class Container(ContainerBase):  # {{{
         # Map of relative paths with '/' separators from root of unzipped ePub
         # to absolute paths on filesystem with os-specific separators
         opfpath = os.path.abspath(os.path.realpath(opfpath))
+        all_opf_files = []
         for dirpath, _dirnames, filenames in os.walk(self.root):
             for f in filenames:
                 path = join(dirpath, f)
@@ -285,6 +288,12 @@ class Container(ContainerBase):  # {{{
                     self.opf_name = name
                     self.opf_dir = os.path.dirname(path)
                     self.mime_map[name] = guess_type('a.opf')
+                if path.lower().endswith('.opf'):
+                    all_opf_files.append((name, os.path.dirname(path)))
+
+        if not hasattr(self, 'opf_name') and all_opf_files:
+            self.opf_name, self.opf_dir = all_opf_files[0]
+            self.mime_map[self.opf_name] = guess_type('a.opf')
 
         if not hasattr(self, 'opf_name'):
             raise InvalidBook('Could not locate opf file: %r'%opfpath)
@@ -296,9 +305,10 @@ class Container(ContainerBase):  # {{{
         for item in self.opf_xpath('//opf:manifest/opf:item[@href and @media-type]'):
             href = item.get('href')
             name = self.href_to_name(href, self.opf_name)
-            if name in self.mime_map and name != self.opf_name:
+            mt = item.get('media-type')
+            if name in self.mime_map and name != self.opf_name and mt:
                 # some epubs include the opf in the manifest with an incorrect mime type
-                self.mime_map[name] = item.get('media-type')
+                self.mime_map[name] = mt
 
     def data_for_clone(self, dest_dir=None):
         dest_dir = dest_dir or self.root
@@ -598,7 +608,7 @@ class Container(ContainerBase):  # {{{
         '''
         Return the raw data corresponding to the file specified by name
 
-        :param decode: If True and the file has a text based mimetype, decode it and return a unicode object instead of raw bytes.
+        :param decode: If True and the file has a text based MIME type, decode it and return a unicode object instead of raw bytes.
         :param normalize_to_nfc: If True the returned unicode object is normalized to the NFC normal form as is required for the EPUB and AZW3 file formats.
         '''
         ans = self.open(name).read()
@@ -1045,12 +1055,9 @@ class Container(ContainerBase):  # {{{
                 # Decouple this file from its links
                 temp = path + 'xxx'
                 shutil.copyfile(path, temp)
-                try:
-                    os.unlink(path)
-                except EnvironmentError:
-                    if not iswindows:
-                        raise
-                    time.sleep(1)  # Wait for whatever has locked the file to release it
+                if iswindows:
+                    retry_on_fail(os.unlink, path)
+                else:
                     os.unlink(path)
                 os.rename(temp, path)
         return path
@@ -1117,6 +1124,26 @@ def walk_dir(basedir):
 class EpubContainer(Container):
 
     book_type = 'epub'
+
+    @property
+    def book_type_for_display(self):
+        ans = self.book_type.upper()
+        try:
+            v = self.opf_version_parsed
+        except Exception:
+            pass
+        else:
+            try:
+                if v.major == 2:
+                    ans += ' 2'
+                else:
+                    if not v.minor:
+                        ans += ' {}'.format(v.major)
+                    else:
+                        ans += ' {}.{}'.format(v.major, v.minor)
+            except Exception:
+                pass
+        return ans
 
     META_INF = {
             'container.xml': True,

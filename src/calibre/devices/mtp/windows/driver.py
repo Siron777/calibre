@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -12,7 +12,7 @@ from polyglot.builtins import iteritems, itervalues, unicode_type, zip
 from itertools import chain
 
 from calibre import as_unicode, prints, force_unicode
-from calibre.constants import plugins, __appname__, numeric_version, isxp
+from calibre.constants import __appname__, numeric_version, isxp
 from calibre.ptempfile import SpooledTemporaryFile
 from calibre.devices.errors import OpenFailed, DeviceError, BlacklistedDevice
 from calibre.devices.mtp.base import MTPDeviceBase, debug
@@ -63,7 +63,12 @@ class MTP_DEVICE(MTPDeviceBase):
             self.wpd = None
             self.wpd_error = _('MTP devices are not supported on Windows XP')
         else:
-            self.wpd, self.wpd_error = plugins['wpd']
+            try:
+                from calibre_extensions import wpd
+                self.wpd = wpd
+            except Exception as err:
+                self.wpd = None
+                self.wpd_error = as_unicode(err)
         if self.wpd is not None:
             try:
                 self.wpd.init(__appname__, *(numeric_version[:3]))

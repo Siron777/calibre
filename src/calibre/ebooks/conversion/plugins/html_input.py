@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -305,12 +305,12 @@ class HTMLInput(InputFormatPlugin):
     def css_import_handler(self, base, href):
         link, frag = self.link_to_local_path(href, base=base)
         if link is None or not os.access(link, os.R_OK) or os.path.isdir(link):
-            return (None, None)
+            return None, None
         try:
             with open(link, 'rb') as f:
                 raw = f.read().decode('utf-8', 'replace')
             raw = self.oeb.css_preprocessor(raw, add_namespace=False)
         except:
             self.log.exception('Failed to read CSS file: %r'%link)
-            return (None, None)
-        return (None, raw)
+            return None, None
+        return None, raw

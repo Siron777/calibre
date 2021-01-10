@@ -1,8 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2010, Kovid Goyal <kovid at kovidgoyal.net>
-
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import errno
 import json
@@ -14,13 +12,13 @@ import time
 
 from PyQt5.Qt import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-    QFrame, QHBoxLayout, QIcon, QLabel, QLineEdit, QListWidget, QPlainTextEdit,
+    QFrame, QHBoxLayout, QIcon, QLabel, QLineEdit, QListWidget, QPlainTextEdit, QLayout,
     QPushButton, QScrollArea, QSize, QSizePolicy, QSpinBox, Qt, QTabWidget, QTimer,
     QToolButton, QUrl, QVBoxLayout, QWidget, pyqtSignal
 )
 
 from calibre import as_unicode
-from calibre.constants import isportable, iswindows, plugins
+from calibre.constants import isportable, iswindows
 from calibre.gui2 import (
     choose_files, choose_save_file, config, error_dialog, gprefs, info_dialog,
     open_url, warning_dialog
@@ -29,6 +27,7 @@ from calibre.gui2.preferences import AbortCommit, ConfigWidgetBase, test_widget
 from calibre.gui2.widgets import HistoryLineEdit
 from calibre.srv.code import custom_list_template as default_custom_list_template
 from calibre.srv.embedded import custom_list_template, search_the_net_urls
+from calibre.srv.loop import parse_trusted_ips
 from calibre.srv.library_broker import load_gui_libraries
 from calibre.srv.opts import change_settings, options, server_config
 from calibre.srv.users import (
@@ -45,15 +44,16 @@ except ImportError:
 
 
 if iswindows and not isportable:
+    from calibre_extensions import winutil
+
     def get_exe():
         exe_base = os.path.abspath(os.path.dirname(sys.executable))
         exe = os.path.join(exe_base, 'calibre.exe')
         if isinstance(exe, bytes):
-            exe = exe.decode('mbcs')
+            exe = os.fsdecode(exe)
         return exe
 
     def startup_shortcut_path():
-        winutil = plugins['winutil'][0]
         startup_path = winutil.special_folder_path(winutil.CSIDL_STARTUP)
         return os.path.join(startup_path, "calibre.lnk")
 
@@ -64,12 +64,12 @@ if iswindows and not isportable:
             for arg in args:
                 quoted_args.append('"{}"'.format(arg))
             quoted_args = ' '.join(quoted_args)
-        plugins['winutil'][0].manage_shortcut(shortcut_path, target, description, quoted_args)
+        winutil.manage_shortcut(shortcut_path, target, description, quoted_args)
 
     def shortcut_exists_at(shortcut_path, target):
         if not os.access(shortcut_path, os.R_OK):
             return False
-        name = plugins['winutil'][0].manage_shortcut(shortcut_path, None, None, None)
+        name = winutil.manage_shortcut(shortcut_path, None, None, None)
         if name is None:
             return False
         return os.path.normcase(os.path.abspath(name)) == os.path.normcase(os.path.abspath(target))
@@ -243,10 +243,10 @@ class AdvancedTab(QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self.l = l = QFormLayout(self)
-        l.setFieldGrowthPolicy(l.AllNonFixedFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.widgets = []
         self.widget_map = {}
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         for name in sorted(options, key=lambda n: options[n].shortdoc.lower()):
             if name in ('auth', 'port', 'allow_socket_preallocation', 'userdb'):
                 continue
@@ -448,7 +448,7 @@ class NewUser(QDialog):
             if username else _('Add new user')
         )
         self.l = l = QFormLayout(self)
-        l.setFieldGrowthPolicy(l.AllNonFixedFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.uw = u = QLineEdit(self)
         l.addRow(_('&Username:'), u)
         if username:
@@ -458,7 +458,7 @@ class NewUser(QDialog):
         self.p1, self.p2 = p1, p2 = QLineEdit(self), QLineEdit(self)
         l.addRow(_('&Password:'), p1), l.addRow(_('&Repeat password:'), p2)
         for p in p1, p2:
-            p.setEchoMode(QLineEdit.PasswordEchoOnEdit)
+            p.setEchoMode(QLineEdit.EchoMode.PasswordEchoOnEdit)
             p.setMinimumWidth(300)
             if username:
                 p.setText(user_data[username]['pw'])
@@ -466,17 +466,17 @@ class NewUser(QDialog):
         sp.stateChanged.connect(self.show_password)
         l.addRow(sp)
         self.bb = bb = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         l.addRow(bb)
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
-        (self.uw if not username else self.p1).setFocus(Qt.OtherFocusReason)
+        (self.uw if not username else self.p1).setFocus(Qt.FocusReason.OtherFocusReason)
 
     def show_password(self):
         for p in self.p1, self.p2:
             p.setEchoMode(
-                QLineEdit.Normal
-                if self.showp.isChecked() else QLineEdit.PasswordEchoOnEdit
+                QLineEdit.EchoMode.Normal
+                if self.showp.isChecked() else QLineEdit.EchoMode.PasswordEchoOnEdit
             )
 
     @property
@@ -539,10 +539,10 @@ class Library(QWidget):
         self.name = name
         self.enable_on_checked = enable_on_checked
         self.l = l = QVBoxLayout(self)
-        l.setSizeConstraint(l.SetMinAndMaxSize)
+        l.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         if not is_first:
             self.border = b = QFrame(self)
-            b.setFrameStyle(b.HLine)
+            b.setFrameStyle(QFrame.Shape.HLine)
             l.addWidget(b)
         self.cw = cw = QCheckBox(name.replace('&', '&&'))
         cw.setStyleSheet('QCheckBox { font-weight: bold }')
@@ -591,7 +591,7 @@ class ChangeRestriction(QDialog):
         self.username = username
         self._items = []
         self.l = l = QFormLayout(self)
-        l.setFieldGrowthPolicy(l.AllNonFixedFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.libraries = t = QWidget(self)
         t.setObjectName('libraries')
@@ -621,7 +621,7 @@ class ChangeRestriction(QDialog):
         self.atype_changed()
 
         self.bb = bb = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         l.addWidget(bb)
@@ -717,9 +717,9 @@ class User(QWidget):
 
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.l = l = QFormLayout(self)
-        l.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.username_label = la = QLabel('')
         l.addWidget(la)
         self.ro_text = _('Allow {} to make &changes (i.e. grant write access)')
@@ -745,7 +745,7 @@ class User(QWidget):
 
     def change_password(self):
         d = NewUser(self.user_data, self, self.username)
-        if d.exec_() == d.Accepted:
+        if d.exec_() == QDialog.DialogCode.Accepted:
             self.user_data[self.username]['pw'] = d.password
             self.changed_signal.emit()
 
@@ -757,14 +757,20 @@ class User(QWidget):
         username, user_data = self.username, self.user_data
         r = user_data[username]['restriction']
         if r['allowed_library_names']:
-            m = _(
-                '{} is currently only allowed to access the libraries named: {}'
-            ).format(username, ', '.join(r['allowed_library_names']))
+            libs = r['allowed_library_names']
+            m = ngettext(
+                '{} is currently only allowed to access the library named: {}',
+                '{} is currently only allowed to access the libraries named: {}',
+                len(libs)
+            ).format(username, ', '.join(libs))
             b = _('Change the allowed libraries')
         elif r['blocked_library_names']:
-            m = _(
-                '{} is currently not allowed to access the libraries named: {}'
-            ).format(username, ', '.join(r['blocked_library_names']))
+            libs = r['blocked_library_names']
+            m = ngettext(
+                '{} is currently not allowed to access the library named: {}',
+                '{} is currently not allowed to access the libraries named: {}',
+                len(libs)
+            ).format(username, ', '.join(libs))
             b = _('Change the blocked libraries')
         else:
             m = _('{} is currently allowed access to all libraries')
@@ -796,7 +802,7 @@ class User(QWidget):
             self.user_data[self.username]['restriction'].copy(),
             parent=self
         )
-        if d.exec_() == d.Accepted:
+        if d.exec_() == QDialog.DialogCode.Accepted:
             self.user_data[self.username]['restriction'] = d.restriction
             self.update_restriction()
             self.changed_signal.emit()
@@ -831,7 +837,7 @@ class Users(QWidget):
         self.user_list = w = QListWidget(self)
         w.setSpacing(1)
         w.doubleClicked.connect(self.current_user_activated)
-        w.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         lp.addWidget(w)
 
         self.user_display = u = User(self)
@@ -860,7 +866,7 @@ class Users(QWidget):
 
     def add_user(self):
         d = NewUser(self.user_data, parent=self)
-        if d.exec_() == d.Accepted:
+        if d.exec_() == QDialog.DialogCode.Accepted:
             un, pw = d.username, d.password
             self.user_data[un] = create_user_data(pw)
             self.user_list.insertItem(0, un)
@@ -892,7 +898,7 @@ class CustomList(QWidget):  # {{{
         QWidget.__init__(self, parent)
         self.default_template = default_custom_list_template()
         self.l = l = QFormLayout(self)
-        l.setFieldGrowthPolicy(l.AllNonFixedFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.la = la = QLabel('<p>' + _(
             'Here you can create a template to control what data is shown when'
             ' using the <i>Custom list</i> mode for the book list'))
@@ -932,9 +938,9 @@ class CustomList(QWidget):  # {{{
         l.addRow(t)
         t.textChanged.connect(self.changed_signal)
         self.imex = bb = QDialogButtonBox(self)
-        b = bb.addButton(_('&Import template'), bb.ActionRole)
+        b = bb.addButton(_('&Import template'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.import_template)
-        b = bb.addButton(_('E&xport template'), bb.ActionRole)
+        b = bb.addButton(_('E&xport template'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.export_template)
         l.addRow(bb)
 
@@ -1023,7 +1029,7 @@ class URLItem(QWidget):
         self.changed_signal.connect(parent.changed_signal)
         self.l = l = QFormLayout(self)
         self.type_widget = t = QComboBox(self)
-        l.setFieldGrowthPolicy(l.ExpandingFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         t.addItems([_('Book'), _('Author')])
         l.addRow(_('URL type:'), t)
         self.name_widget = n = QLineEdit(self)
@@ -1155,7 +1161,7 @@ class SearchTheInternet(QWidget):
         sb = self.sa.verticalScrollBar()
         if sb:
             sb.setValue(sb.maximum())
-        self.items[-1].name_widget.setFocus(Qt.OtherFocusReason)
+        self.items[-1].name_widget.setFocus(Qt.FocusReason.OtherFocusReason)
 
     @property
     def serialized_urls(self):
@@ -1262,7 +1268,7 @@ class ConfigWidget(ConfigWidgetBase):
     def start_server(self):
         if not self.save_changes():
             return
-        self.setCursor(Qt.BusyCursor)
+        self.setCursor(Qt.CursorShape.BusyCursor)
         try:
             self.gui.start_content_server(check_started=False)
             while (not self.server.is_running and self.server.exception is None):
@@ -1337,10 +1343,10 @@ class ConfigWidget(ConfigWidgetBase):
         loc = QLabel(_('The server log files are in: {}').format(os.path.dirname(log_error_file)))
         loc.setWordWrap(True)
         layout.addWidget(loc)
-        bx = QDialogButtonBox(QDialogButtonBox.Ok)
+        bx = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         layout.addWidget(bx)
         bx.accepted.connect(d.accept)
-        b = bx.addButton(_('&Clear logs'), bx.ActionRole)
+        b = bx.addButton(_('&Clear logs'), QDialogButtonBox.ButtonRole.ActionRole)
 
         def clear_logs():
             if getattr(self.server, 'is_running', False):
@@ -1380,6 +1386,14 @@ class ConfigWidget(ConfigWidgetBase):
                 )
                 self.tabs_widget.setCurrentWidget(self.users_tab)
                 return False
+        if settings['trusted_ips']:
+            try:
+                tuple(parse_trusted_ips(settings['trusted_ips']))
+            except Exception as e:
+                error_dialog(
+                    self, _('Invalid trusted IPs'), str(e), show=True)
+                return False
+
         if not self.custom_list_tab.commit():
             return False
         if not self.search_net_tab.commit():

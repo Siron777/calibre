@@ -1,10 +1,11 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
 from PyQt5.Qt import Qt, QDialog, QAbstractItemView, QApplication
 
+from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.gui2.dialogs.tag_editor_ui import Ui_TagEditor
 from calibre.gui2 import question_dialog, error_dialog, gprefs
 from calibre.constants import islinux
@@ -29,10 +30,25 @@ class TagEditor(QDialog, Ui_TagEditor):
                 self.is_names = fm['display'].get('is_names', False)
                 if self.is_names:
                     self.sep = '&'
-                self.setWindowTitle(_('Edit %s') % fm['name'])
+                self.setWindowTitle(self.windowTitle() + ': ' + fm['name'])
             except Exception:
                 pass
             key = db.field_metadata.key_to_label(key)
+        else:
+            self.setWindowTitle(self.windowTitle() + ': ' + db.field_metadata['tags']['name'])
+
+        if self.sep == '&':
+            self.add_tag_input.setToolTip('<p>' +
+                        _('If the item you want is not in the available list, '
+                          'you can add it here. Accepts an ampersand-separated '
+                          'list of items. The items will be applied to '
+                          'the book.') + '</p>')
+        else:
+            self.add_tag_input.setToolTip('<p>' +
+                        _('If the item you want is not in the available list, '
+                          'you can add it here. Accepts a comma-separated '
+                          'list of items. The items will be applied to '
+                          'the book.') + '</p>')
         self.key = key
         self.index = db.row(id_) if id_ is not None else None
         if self.index is not None:
@@ -55,8 +71,8 @@ class TagEditor(QDialog, Ui_TagEditor):
             tags = []
 
         if self.is_names:
-            self.applied_tags.setDragDropMode(QAbstractItemView.InternalMove)
-            self.applied_tags.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            self.applied_tags.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+            self.applied_tags.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
         if key:
             all_tags = [tag for tag in self.db.all_custom(label=key)]
@@ -102,6 +118,10 @@ class TagEditor(QDialog, Ui_TagEditor):
         items = self.available_tags.selectedItems() if item is None else [item]
         if not items:
             error_dialog(self, 'No tags selected', 'You must select at least one tag from the list of Available tags.').exec_()
+            return
+        if not confirm(
+            _('Deleting tags is done immediately and there is no undo.'),
+            'tag_editor_delete'):
             return
         pos = self.available_tags.verticalScrollBar().value()
         for item in items:
@@ -195,7 +215,7 @@ class TagEditor(QDialog, Ui_TagEditor):
             tag = tag.strip()
             if not tag:
                 continue
-            for item in self.available_tags.findItems(tag, Qt.MatchFixedString):
+            for item in self.available_tags.findItems(tag, Qt.MatchFlag.MatchFixedString):
                 self.available_tags.takeItem(self.available_tags.row(item))
             if tag not in tags_in_box:
                 tags_in_box.append(tag)
@@ -237,5 +257,5 @@ if __name__ == '__main__':
     db = db()
     app = Application([])
     d = TagEditor(None, db, current_tags='a b c'.split())
-    if d.exec_() == d.Accepted:
+    if d.exec_() == QDialog.DialogCode.Accepted:
         print(d.tags)

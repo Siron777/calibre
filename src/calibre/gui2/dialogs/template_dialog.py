@@ -1,5 +1,5 @@
-#!/usr/bin/env python2
-from __future__ import absolute_import, division, print_function, unicode_literals
+#!/usr/bin/env python
+
 
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -9,7 +9,7 @@ import json, os, traceback
 
 from PyQt5.Qt import (Qt, QDialog, QDialogButtonBox, QSyntaxHighlighter, QFont,
                       QRegExp, QApplication, QTextCharFormat, QColor, QCursor,
-                      QIcon, QSize)
+                      QIcon, QSize, QPalette)
 
 from calibre import sanitize_file_name
 from calibre.constants import config_dir
@@ -44,7 +44,7 @@ class TemplateHighlighter(QSyntaxHighlighter):
     Formats = {}
     BN_FACTOR = 1000
 
-    KEYWORDS = ["program"]
+    KEYWORDS = ["program", 'if', 'then', 'else', 'elif', 'fi']
 
     def __init__(self, parent=None):
         super(TemplateHighlighter, self).__init__(parent)
@@ -85,8 +85,8 @@ class TemplateHighlighter(QSyntaxHighlighter):
         pal = QApplication.instance().palette()
         for name, color, bold, italic in (
                 ("normal", None, False, False),
-                ("keyword", pal.color(pal.Link).name(), True, False),
-                ("builtin", pal.color(pal.Link).name(), False, False),
+                ("keyword", pal.color(QPalette.ColorRole.Link).name(), True, False),
+                ("builtin", pal.color(QPalette.ColorRole.Link).name(), False, False),
                 ("comment", "#007F00", False, True),
                 ("string", "#808000", False, False),
                 ("number", "#924900", False, False),
@@ -107,7 +107,7 @@ class TemplateHighlighter(QSyntaxHighlighter):
             if col:
                 format.setForeground(QColor(col))
             if Config["%sfontbold" % name]:
-                format.setFontWeight(QFont.Bold)
+                format.setFontWeight(QFont.Weight.Bold)
             format.setFontItalic(Config["%sfontitalic" % name])
             self.Formats[name] = format
 
@@ -166,7 +166,7 @@ class TemplateHighlighter(QSyntaxHighlighter):
                 i += 1
 
     def rehighlight(self):
-        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         QSyntaxHighlighter.rehighlight(self)
         QApplication.restoreOverrideCursor()
 
@@ -213,7 +213,8 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
 
     def __init__(self, parent, text, mi=None, fm=None, color_field=None,
                  icon_field_key=None, icon_rule_kind=None, doing_emblem=False,
-                 text_is_placeholder=False):
+                 text_is_placeholder=False, dialog_is_st_editor=False,
+                 global_vars={}):
         QDialog.__init__(self, parent)
         Ui_TemplateDialog.__init__(self)
         self.setupUi(self)
@@ -221,6 +222,8 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.coloring = color_field is not None
         self.iconing = icon_field_key is not None
         self.embleming = doing_emblem
+        self.dialog_is_st_editor = dialog_is_st_editor
+        self.global_vars = global_vars
 
         cols = []
         if fm is not None:
@@ -239,7 +242,8 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         if self.coloring:
             self.color_layout.setVisible(True)
             for n1, k1 in cols:
-                self.colored_field.addItem(n1, k1)
+                self.colored_field.addItem(n1 +
+                       (' (' + k1 + ')' if k1 != color_row_key else ''), k1)
             self.colored_field.setCurrentIndex(self.colored_field.findData(color_field))
         elif self.iconing or self.embleming:
             self.icon_layout.setVisible(True)
@@ -250,7 +254,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
                 self.icon_field.setVisible(False)
 
             for n1, k1 in cols:
-                self.icon_field.addItem(n1, k1)
+                self.icon_field.addItem('{} ({})'.format(n1, k1), k1)
             self.icon_file_names = []
             d = os.path.join(config_dir, 'cc_icons')
             if os.path.exists(d):
@@ -273,6 +277,14 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
                 self.icon_kind.setCurrentIndex(dex)
                 self.icon_field.setCurrentIndex(self.icon_field.findData(icon_field_key))
 
+        if dialog_is_st_editor:
+            self.buttonBox.setVisible(False)
+        else:
+            self.new_doc_label.setVisible(False)
+            self.new_doc.setVisible(False)
+            self.template_name_label.setVisible(False)
+            self.template_name.setVisible(False)
+
         if mi:
             self.mi = mi
         else:
@@ -294,10 +306,12 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
                 from calibre.gui2.ui import get_gui
                 self.mi.set_all_user_metadata(
                       get_gui().current_db.new_api.field_metadata.custom_field_metadata())
+            for col in self.mi.get_all_user_metadata(False):
+                self.mi.set(col, (col,), 0)
 
         # Remove help icon on title bar
         icon = self.windowIcon()
-        self.setWindowFlags(self.windowFlags()&(~Qt.WindowContextHelpButtonHint))
+        self.setWindowFlags(self.windowFlags()&(~Qt.WindowType.WindowContextHelpButtonHint))
         self.setWindowIcon(icon)
 
         self.last_text = ''
@@ -313,10 +327,11 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         if text is not None:
             if text_is_placeholder:
                 self.textbox.setPlaceholderText(text)
+                self.textbox.clear()
             else:
                 self.textbox.setPlainText(text)
-        self.buttonBox.button(QDialogButtonBox.Ok).setText(_('&OK'))
-        self.buttonBox.button(QDialogButtonBox.Cancel).setText(_('&Cancel'))
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText(_('&OK'))
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText(_('&Cancel'))
         self.color_copy_button.clicked.connect(self.color_to_clipboard)
         self.filename_button.clicked.connect(self.filename_button_clicked)
         self.icon_copy_button.clicked.connect(self.icon_to_clipboard)
@@ -359,7 +374,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
     def filename_button_clicked(self):
         try:
             path = choose_files(self, 'choose_category_icon',
-                        _('Select Icon'), filters=[
+                        _('Select icon'), filters=[
                         ('Images', ['png', 'gif', 'jpg', 'jpeg'])],
                     all_files=False, select_only_single_file=True)
             if path:
@@ -412,8 +427,8 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
             self.highlighter.regenerate_paren_positions()
             self.text_cursor_changed()
             self.template_value.setText(
-                SafeFormat().safe_format(cur_text, self.mi,
-                                                _('EXCEPTION: '), self.mi))
+                SafeFormat().safe_format(cur_text, self.mi, _('EXCEPTION: '),
+                                         self.mi, global_vars=self.global_vars))
 
     def text_cursor_changed(self):
         cursor = self.textbox.textCursor()
@@ -429,12 +444,17 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         name = unicode_type(toWhat)
         self.source_code.clear()
         self.documentation.clear()
+        self.func_type.clear()
         if name in self.funcs:
             self.documentation.setPlainText(self.funcs[name].doc)
             if name in self.builtins and name in self.builtin_source_dict:
                 self.source_code.setPlainText(self.builtin_source_dict[name])
             else:
                 self.source_code.setPlainText(self.funcs[name].program_text)
+            if self.funcs[name].is_python:
+                self.func_type.setText(_('Template function in Python'))
+            else:
+                self.func_type.setText(_('Stored template'))
 
     def accept(self):
         txt = unicode_type(self.textbox.toPlainText()).rstrip()
@@ -461,6 +481,27 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         else:
             self.rule = ('', txt)
         QDialog.accept(self)
+
+    def reject(self):
+        QDialog.reject(self)
+        if self.dialog_is_st_editor:
+            parent = self.parent()
+            while True:
+                if hasattr(parent, 'reject'):
+                    parent.reject()
+                    break
+                parent = parent.parent()
+                if parent is None:
+                    break
+
+
+class EmbeddedTemplateDialog(TemplateDialog):
+
+    def __init__(self, parent):
+        TemplateDialog.__init__(self, parent, _('A General Program Mode Template'), text_is_placeholder=True,
+                                dialog_is_st_editor=True)
+        self.setParent(parent)
+        self.setWindowFlags(Qt.WindowType.Widget)
 
 
 if __name__ == '__main__':

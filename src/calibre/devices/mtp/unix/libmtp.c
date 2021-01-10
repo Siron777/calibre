@@ -86,11 +86,7 @@ static uint16_t data_to_python(void *params, void *priv, uint32_t sendlen, unsig
     cb = (ProgressCallback *)priv;
     *putlen = sendlen;
     PyEval_RestoreThread(cb->state);
-#if PY_MAJOR_VERSION >= 3
     res = PyObject_CallMethod(cb->extra, "write", "y#", data, (Py_ssize_t)sendlen);
-#else
-    res = PyObject_CallMethod(cb->extra, "write", "s#", data, (Py_ssize_t)sendlen);
-#endif
     if (res == NULL) {
         ret = LIBMTP_HANDLER_RETURN_ERROR;
         *putlen = 0;
@@ -715,43 +711,13 @@ static PyMethodDef libmtp_methods[] = {
 
     {NULL, NULL, 0, NULL}
 };
-
-
-#if PY_MAJOR_VERSION >= 3
-#define INITERROR return NULL
-#define INITMODULE PyModule_Create(&libmtp_module)
-static struct PyModuleDef libmtp_module = {
-    /* m_base     */ PyModuleDef_HEAD_INIT,
-    /* m_name     */ "libmtp",
-    /* m_doc      */ libmtp_doc,
-    /* m_size     */ -1,
-    /* m_methods  */ libmtp_methods,
-    /* m_slots    */ 0,
-    /* m_traverse */ 0,
-    /* m_clear    */ 0,
-    /* m_free     */ 0,
-};
-CALIBRE_MODINIT_FUNC PyInit_libmtp(void) {
-#else
-#define INITERROR return
-#define INITMODULE Py_InitModule3("libmtp", libmtp_methods, libmtp_doc);
-CALIBRE_MODINIT_FUNC initlibmtp(void) {
-#endif
-
+static int
+exec_module(PyObject *m) {
     DeviceType.tp_new = PyType_GenericNew;
-    if (PyType_Ready(&DeviceType) < 0) {
-        INITERROR;
-    }
-
-    PyObject *m = INITMODULE;
-    if (m == NULL) {
-        INITERROR;
-    }
+    if (PyType_Ready(&DeviceType) < 0) return -1;
 
     MTPError = PyErr_NewException("libmtp.MTPError", NULL, NULL);
-    if (MTPError == NULL) {
-        INITERROR;
-    }
+    if (MTPError == NULL) return -1;
     PyModule_AddObject(m, "MTPError", MTPError);
 
     // Redirect stdout to get rid of the annoying message about mtpz. Really,
@@ -782,7 +748,17 @@ CALIBRE_MODINIT_FUNC initlibmtp(void) {
     PyModule_AddIntMacro(m, LIBMTP_DEBUG_DATA);
     PyModule_AddIntMacro(m, LIBMTP_DEBUG_ALL);
 
-#if PY_MAJOR_VERSION >= 3
-    return m;
-#endif
+	return 0;
 }
+
+static PyModuleDef_Slot slots[] = { {Py_mod_exec, exec_module}, {0, NULL} };
+
+static struct PyModuleDef module_def = {
+    .m_base     = PyModuleDef_HEAD_INIT,
+    .m_name     = "libmtp",
+    .m_doc      = libmtp_doc,
+    .m_methods  = libmtp_methods,
+    .m_slots    = slots,
+};
+
+CALIBRE_MODINIT_FUNC PyInit_libmtp(void) { return PyModuleDef_Init(&module_def); }

@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -22,7 +22,7 @@ sheet_tokens = [(re.compile(k), v, n) for k, v, n in [
     (r'\#[a-zA-Z0-9_-]+', 'id_selector', 'id-selector'),
     (r'@[a-zA-Z0-9_-]+', 'preproc', 'atrule'),
     (r'[a-zA-Z0-9_-]+', 'tag', 'tag'),
-    (r'[~\^\*!%&\[\]\(\)<>\|+=@:;,./?-]', 'operator', 'operator'),
+    (r'[\$~\^\*!%&\[\]\(\)<>\|+=@:;,./?-]', 'operator', 'operator'),
 ]]
 
 URL_TOKEN = 'url'
@@ -40,8 +40,8 @@ content_tokens = [(re.compile(k), v, n) for k, v, n in [
     r'border-right-style|border-right-width|border-right|border-top-color|'
     r'border-top-style|border-top-width|border-bottom|'
     r'border-collapse|border-left|border-width|border-color|'
-    r'border-spacing|border-style|border-top|border|caption-side|'
-    r'clear|clip|color|content|counter-increment|counter-reset|'
+    r'border-spacing|border-style|border-top|border-box|border|box-sizing|caption-side|'
+    r'clear|clip|color|content-box|content|counter-increment|counter-reset|'
     r'cue-after|cue-before|cue|cursor|direction|display|'
     r'elevation|empty-cells|float|font-family|font-size|'
     r'font-size-adjust|font-stretch|font-style|font-variant|'
@@ -53,6 +53,7 @@ content_tokens = [(re.compile(k), v, n) for k, v, n in [
     r'outline-style|outline-width|overflow(?:-x|-y)?|padding-bottom|'
     r'padding-left|padding-right|padding-top|padding|'
     r'page-break-after|page-break-before|page-break-inside|'
+    r'break-before|break-after|'
     r'pause-after|pause-before|pause|pitch|pitch-range|'
     r'play-during|position|pre-wrap|pre-line|pre|quotes|richness|right|size|'
     r'speak-header|speak-numeral|speak-punctuation|speak|'
@@ -328,6 +329,7 @@ if __name__ == '__main__':
 /* A demonstration css sheet */
 body {
     color: green;
+    box-sizing: border-box;
     font-size: 12pt
 }
 

@@ -1,7 +1,5 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
-from __future__ import (unicode_literals,  # division, absolute_import,
-                        print_function)
 
 __license__   = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -278,7 +276,7 @@ class ExtraCustomization(DeviceConfigTab):  # {{{
             if isinstance(extra_customization_message, list):
                 self.opt_extra_customization = []
                 if len(extra_customization_message) > 6:
-                    row_func = lambda x, y: ((x/2) * 2) + y
+                    row_func = lambda x, y: ((x//2) * 2) + y
                     col_func = lambda x: x%2
                 else:
                     row_func = lambda x, y: x*2 + y
@@ -313,7 +311,7 @@ class ExtraCustomization(DeviceConfigTab):  # {{{
                         self.extra_layout.addWidget(l, row_func(i + 2, 0), col_func(i))
                     self.extra_layout.addWidget(self.opt_extra_customization[i],
                                                 row_func(i + 2, 1), col_func(i))
-                spacerItem1 = QSpacerItem(10, 10, QSizePolicy.Minimum, QSizePolicy.Expanding)
+                spacerItem1 = QSpacerItem(10, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
                 self.extra_layout.addItem(spacerItem1, row_func(i + 2 + 2, 1), 0, 1, 2)
                 self.extra_layout.setRowStretch(row_func(i + 2 + 2, 1), 2)
             else:
@@ -388,10 +386,10 @@ if __name__ == '__main__':
     d.l = QVBoxLayout()
     d.setLayout(d.l)
     d.l.addWidget(cw)
-    bb = QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+    bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
     d.l.addWidget(bb)
     bb.accepted.connect(d.accept)
     bb.rejected.connect(d.reject)
-    if d.exec_() == d.Accepted:
+    if d.exec_() == QDialog.DialogCode.Accepted:
         cw.commit()
     dev.shutdown()

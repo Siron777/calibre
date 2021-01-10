@@ -1,4 +1,4 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -37,10 +37,11 @@ class ChooseFormatDialog(QDialog):
             self.owb.setMenu(self.own)
             self.own.aboutToShow.connect(self.populate_open_with)
         self.buttonBox = bb = QDialogButtonBox(self)
-        bb.setStandardButtons(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        bb.setStandardButtons(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         h.addStretch(10), h.addWidget(self.buttonBox)
 
+        formats = list(formats)
         for format in formats:
             self.formats.addItem(QListWidgetItem(file_icon_provider().icon_from_ext(format.lower()),
                                                  format.upper()))

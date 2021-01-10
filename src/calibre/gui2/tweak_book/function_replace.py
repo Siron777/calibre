@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -9,7 +9,7 @@ import re, io, weakref, sys
 
 from PyQt5.Qt import (
     pyqtSignal, QVBoxLayout, QHBoxLayout, QPlainTextEdit, QLabel, QFontMetrics,
-    QSize, Qt, QApplication, QIcon)
+    QSize, Qt, QApplication, QIcon, QDialogButtonBox)
 
 from calibre.ebooks.oeb.polish.utils import apply_func_to_match_groups, apply_func_to_html_text
 from calibre.gui2 import error_dialog
@@ -22,7 +22,7 @@ from calibre.utils.icu import capitalize, upper, lower, swapcase
 from calibre.utils.titlecase import titlecase
 from calibre.utils.localization import localize_user_manual_link
 from polyglot.builtins import iteritems, unicode_type
-from polyglot.io import PolyglotBytesIO
+from polyglot.io import PolyglotStringIO
 
 user_functions = JSONConfig('editor-search-replace-functions')
 
@@ -67,7 +67,7 @@ class Function(object):
         self.match_index = 0
         self.boss = get_boss()
         self.data = {}
-        self.debug_buf = PolyglotBytesIO()
+        self.debug_buf = PolyglotStringIO()
         self.functions = {name:func.mod for name, func in iteritems(functions()) if func.mod is not None}
 
     def __hash__(self):
@@ -108,7 +108,7 @@ class DebugOutput(Dialog):
 
     def __init__(self, parent=None):
         Dialog.__init__(self, 'Debug output', 'sr-function-debug-output')
-        self.setAttribute(Qt.WA_DeleteOnClose, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
 
     def setup_ui(self):
         self.l = l = QVBoxLayout(self)
@@ -116,8 +116,8 @@ class DebugOutput(Dialog):
         self.log_text = ''
         l.addWidget(t)
         l.addWidget(self.bb)
-        self.bb.setStandardButtons(self.bb.Close)
-        self.cb = b = self.bb.addButton(_('&Copy to clipboard'), self.bb.ActionRole)
+        self.bb.setStandardButtons(QDialogButtonBox.StandardButton.Close)
+        self.cb = b = self.bb.addButton(_('&Copy to clipboard'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.copy_to_clipboard)
         b.setIcon(QIcon(I('edit-copy.png')))
 

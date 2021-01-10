@@ -1,4 +1,4 @@
-from __future__ import with_statement, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''
@@ -7,30 +7,57 @@ Defines various abstract base classes that can be subclassed to create powerful 
 __docformat__ = "restructuredtext en"
 
 
-import os, time, traceback, re, sys, io
+import io
+import os
+import re
+import sys
+import time
+import traceback
 from collections import defaultdict
 from contextlib import closing
+from urllib.parse import urlparse, urlsplit
 
-
-from calibre import (browser, __appname__, iswindows, force_unicode,
-                    strftime, preferred_encoding, as_unicode, random_user_agent)
-from calibre.ebooks.BeautifulSoup import BeautifulSoup, NavigableString, CData, Tag
-from calibre.ebooks.metadata.opf2 import OPFCreator
-from calibre.web import Recipe
-from calibre.ebooks.metadata.toc import TOC
+from calibre import (
+    __appname__, as_unicode, browser, force_unicode, iswindows, preferred_encoding,
+    random_user_agent, strftime
+)
+from calibre.ebooks.BeautifulSoup import BeautifulSoup, CData, NavigableString, Tag
 from calibre.ebooks.metadata import MetaInformation
-from calibre.web.feeds import feed_from_xml, templates, feeds_from_index, Feed
-from calibre.web.fetch.simple import option_parser as web2disk_option_parser, RecursiveFetcher, AbortArticle
-from calibre.web.fetch.utils import prepare_masthead_image
-from calibre.utils.threadpool import WorkRequest, ThreadPool, NoResultsPending
+from calibre.ebooks.metadata.opf2 import OPFCreator
+from calibre.ebooks.metadata.toc import TOC
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.date import now as nowf
 from calibre.utils.icu import numeric_sort_key
-from calibre.utils.img import save_cover_data_to, add_borders_to_image, image_to_data
+from calibre.utils.img import add_borders_to_image, image_to_data, save_cover_data_to
 from calibre.utils.localization import canonicalize_lang
 from calibre.utils.logging import ThreadSafeWrapper
-from polyglot.builtins import unicode_type, string_or_bytes, getcwd
-from polyglot.urllib import urlparse, urlsplit
+from calibre.utils.threadpool import NoResultsPending, ThreadPool, WorkRequest
+from calibre.web import Recipe
+from calibre.web.feeds import Feed, feed_from_xml, feeds_from_index, templates
+from calibre.web.fetch.simple import (
+    AbortArticle, RecursiveFetcher, option_parser as web2disk_option_parser
+)
+from calibre.web.fetch.utils import prepare_masthead_image
+from polyglot.builtins import getcwd, string_or_bytes, unicode_type
+
+
+def classes(classes):
+    q = frozenset(classes.split(' '))
+    return dict(attrs={
+        'class': lambda x: x and frozenset(x.split()).intersection(q)})
+
+
+def prefixed_classes(classes):
+    q = frozenset(classes.split(' '))
+
+    def matcher(x):
+        if x:
+            for candidate in frozenset(x.split()):
+                for x in q:
+                    if candidate.startswith(x):
+                        return True
+        return False
+    return {'attrs': {'class': matcher}}
 
 
 class LoginFailed(ValueError):
@@ -110,7 +137,7 @@ class BasicNewsRecipe(Recipe):
     #: If True stylesheets are not downloaded and processed
     no_stylesheets         = False
 
-    #: Convenient flag to strip all javascript tags from the downloaded HTML
+    #: Convenient flag to strip all JavaScript tags from the downloaded HTML
     remove_javascript      = True
 
     #: If True the GUI will ask the user for a username and password
@@ -343,20 +370,20 @@ class BasicNewsRecipe(Recipe):
     ignore_duplicate_articles = None
 
     # The following parameters control how the recipe attempts to minimize
-    # jpeg image sizes
+    # JPEG image sizes
 
     #: Set this to False to ignore all scaling and compression parameters and
     #: pass images through unmodified. If True and the other compression
-    #: parameters are left at their default values, jpeg images will be scaled to fit
+    #: parameters are left at their default values, JPEG images will be scaled to fit
     #: in the screen dimensions set by the output profile and compressed to size at
     #: most (w * h)/16 where w x h are the scaled image dimensions.
     compress_news_images = False
 
-    #: The factor used when auto compressing jpeg images. If set to None,
+    #: The factor used when auto compressing JPEG images. If set to None,
     #: auto compression is disabled. Otherwise, the images will be reduced in size to
     #: (w * h)/compress_news_images_auto_size bytes if possible by reducing
     #: the quality level, where w x h are the image dimensions in pixels.
-    #: The minimum jpeg quality will be 5/100 so it is possible this constraint
+    #: The minimum JPEG quality will be 5/100 so it is possible this constraint
     #: will not be met.  This parameter can be overridden by the parameter
     #: compress_news_images_max_size which provides a fixed maximum size for images.
     #: Note that if you enable scale_news_images_to_device then the image will
@@ -365,9 +392,9 @@ class BasicNewsRecipe(Recipe):
     #: other words, this compression happens after scaling.
     compress_news_images_auto_size = 16
 
-    #: Set jpeg quality so images do not exceed the size given (in KBytes).
+    #: Set JPEG quality so images do not exceed the size given (in KBytes).
     #: If set, this parameter overrides auto compression via compress_news_images_auto_size.
-    #: The minimum jpeg quality will be 5/100 so it is possible this constraint
+    #: The minimum JPEG quality will be 5/100 so it is possible this constraint
     #: will not be met.
     compress_news_images_max_size = None
 
@@ -502,8 +529,8 @@ class BasicNewsRecipe(Recipe):
         '''
         if 'user_agent' not in kwargs:
             # More and more news sites are serving JPEG XR images to IE
-            kwargs['user_agent'] = self.last_used_user_agent = getattr(
-                    self, 'last_used_user_agent', None) or random_user_agent(allow_ie=False)
+            ua = getattr(self, 'last_used_user_agent', None) or self.calibre_most_common_ua or random_user_agent(allow_ie=False)
+            kwargs['user_agent'] = self.last_used_user_agent = ua
         self.log('Using user agent:', kwargs['user_agent'])
         br = browser(*args, **kwargs)
         br.addheaders += [('Accept', '*/*')]
@@ -672,7 +699,7 @@ class BasicNewsRecipe(Recipe):
             # the recipe implements get_browser() or not
             br = self.clone_browser(self.browser)
             open_func = getattr(br, 'open_novisit', br.open)
-            with closing(open_func(url_or_raw)) as f:
+            with closing(open_func(url_or_raw, timeout=self.timeout)) as f:
                 _raw = f.read()
             if not _raw:
                 raise RuntimeError('Could not fetch index from %s'%url_or_raw)
@@ -685,7 +712,9 @@ class BasicNewsRecipe(Recipe):
                 _raw = self.encoding(_raw)
             else:
                 _raw = _raw.decode(self.encoding, 'replace')
-        from calibre.ebooks.chardet import strip_encoding_declarations, xml_to_unicode
+        from calibre.ebooks.chardet import (
+            strip_encoding_declarations, xml_to_unicode
+        )
         from calibre.utils.cleantext import clean_xml_chars
         if isinstance(_raw, unicode_type):
             _raw = strip_encoding_declarations(_raw)
@@ -705,9 +734,9 @@ class BasicNewsRecipe(Recipe):
         Extracts main article content from 'html', cleans up and returns as a (article_html, extracted_title) tuple.
         Based on the original readability algorithm by Arc90.
         '''
+        from lxml.html import document_fromstring, fragment_fromstring, tostring
+
         from calibre.ebooks.readability import readability
-        from lxml.html import (fragment_fromstring, tostring,
-                document_fromstring)
 
         doc = readability.Document(html, self.log, url=url,
                 keep_elements=self.auto_cleanup_keep)
@@ -1078,6 +1107,7 @@ class BasicNewsRecipe(Recipe):
         ans = src[:npos+1]
         if len(ans) < len(src):
             from calibre.utils.cleantext import clean_xml_chars
+
             # Truncating the string could cause a dangling UTF-16 half-surrogate, which will cause lxml to barf, clean it
             ans = clean_xml_chars(ans) + '\u2026'
         return ans
@@ -1098,7 +1128,7 @@ class BasicNewsRecipe(Recipe):
                     if bn:
                         img = os.path.join(imgdir, 'feed_image_%d%s'%(self.image_counter, os.path.splitext(bn)))
                         try:
-                            with open(img, 'wb') as fi, closing(self.browser.open(feed.image_url)) as r:
+                            with open(img, 'wb') as fi, closing(self.browser.open(feed.image_url, timeout=self.timeout)) as r:
                                 fi.write(r.read())
                             self.image_counter += 1
                             feed.image_url = img
@@ -1303,7 +1333,7 @@ class BasicNewsRecipe(Recipe):
                     cdata = f.read()
             else:
                 self.report_progress(1, _('Downloading cover from %s')%cu)
-                with closing(self.browser.open(cu)) as r:
+                with closing(self.browser.open(cu, timeout=self.timeout)) as r:
                     cdata = r.read()
             if not cdata:
                 return
@@ -1352,7 +1382,7 @@ class BasicNewsRecipe(Recipe):
             with open(mpath, 'wb') as mfile:
                 mfile.write(open(mu, 'rb').read())
         else:
-            with open(mpath, 'wb') as mfile, closing(self.browser.open(mu)) as r:
+            with open(mpath, 'wb') as mfile, closing(self.browser.open(mu, timeout=self.timeout)) as r:
                 mfile.write(r.read())
             self.report_progress(1, _('Masthead image downloaded'))
         self.prepare_masthead_image(mpath, outfile)
@@ -1419,6 +1449,9 @@ class BasicNewsRecipe(Recipe):
     def prepare_masthead_image(self, path_to_image, out_path):
         prepare_masthead_image(path_to_image, out_path, self.MI_WIDTH, self.MI_HEIGHT)
 
+    def publication_date(self):
+        return nowf()
+
     def create_opf(self, feeds, dir=None):
         if dir is None:
             dir = self.output_dir
@@ -1447,7 +1480,7 @@ class BasicNewsRecipe(Recipe):
         language = canonicalize_lang(self.language)
         if language is not None:
             mi.language = language
-        mi.pubdate = nowf()
+        mi.pubdate = self.publication_date()
         opf_path = os.path.join(dir, 'index.opf')
         ncx_path = os.path.join(dir, 'index.ncx')
 
@@ -1516,10 +1549,19 @@ class BasicNewsRecipe(Recipe):
                     arelpath = '%sindex.html'%adir
                     for curl in self.canonicalize_internal_url(a.orig_url, is_link=False):
                         aumap[curl].add(arelpath)
-                    parent.add_item(arelpath, None,
+                    article_toc_entry = parent.add_item(arelpath, None,
                             a.title if a.title else _('Untitled article'),
                             play_order=po, author=auth,
                             description=desc, toc_thumbnail=tt)
+                    for entry in a.internal_toc_entries:
+                        anchor = entry.get('anchor')
+                        if anchor:
+                            self.play_order_counter += 1
+                            po += 1
+                            article_toc_entry.add_item(
+                                arelpath, entry['anchor'], entry['title'] or _('Unknown section'),
+                                play_order=po
+                            )
                     last = os.path.join(self.output_dir, ('%sindex.html'%adir).replace('/', os.sep))
                     for sp in a.sub_pages:
                         prefix = os.path.commonprefix([opf_path, sp])
@@ -1616,24 +1658,36 @@ class BasicNewsRecipe(Recipe):
         '''
         feeds = self.get_feeds()
         parsed_feeds = []
+        br = self.browser
         for obj in feeds:
             if isinstance(obj, string_or_bytes):
                 title, url = None, obj
             else:
                 title, url = obj
+            if isinstance(title, bytes):
+                title = title.decode('utf-8')
+            if isinstance(url, bytes):
+                url = url.decode('utf-8')
             if url.startswith('feed://'):
                 url = 'http'+url[4:]
             self.report_progress(0, _('Fetching feed')+' %s...'%(title if title else url))
             try:
-                with closing(self.browser.open(url)) as f:
-                    parsed_feeds.append(feed_from_xml(f.read(),
-                                          title=title,
-                                          log=self.log,
-                                          oldest_article=self.oldest_article,
-                                          max_articles_per_feed=self.max_articles_per_feed,
-                                          get_article_url=self.get_article_url))
-                    if (self.delay > 0):
-                        time.sleep(self.delay)
+                purl = urlparse(url, allow_fragments=False)
+                if purl.username or purl.password:
+                    hostname = purl.hostname
+                    if purl.port:
+                        hostname += f':{purl.port}'
+                    url = purl._replace(netloc=hostname).geturl()
+                    if purl.username and purl.password:
+                        br.add_password(url, purl.username, purl.password)
+                with closing(br.open_novisit(url, timeout=self.timeout)) as f:
+                    raw = f.read()
+                parsed_feeds.append(feed_from_xml(
+                    raw, title=title, log=self.log,
+                    oldest_article=self.oldest_article,
+                    max_articles_per_feed=self.max_articles_per_feed,
+                    get_article_url=self.get_article_url
+                ))
             except Exception as err:
                 feed = Feed()
                 msg = 'Failed feed: %s'%(title if title else url)
@@ -1641,6 +1695,8 @@ class BasicNewsRecipe(Recipe):
                 feed.description = as_unicode(err)
                 parsed_feeds.append(feed)
                 self.log.exception(msg)
+            if self.delay > 0:
+                time.sleep(self.delay)
 
         remove = [fl for fl in parsed_feeds if len(fl) == 0 and self.remove_empty_feeds]
         for f in remove:
@@ -1814,8 +1870,9 @@ class CalibrePeriodical(BasicNewsRecipe):
         zf = ZipFile(f)
         zf.extractall()
         zf.close()
-        from calibre.web.feeds.recipes import compile_recipe
         from glob import glob
+
+        from calibre.web.feeds.recipes import compile_recipe
         try:
             recipe = compile_recipe(open(glob('*.recipe')[0],
                 'rb').read())

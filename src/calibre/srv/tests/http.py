@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -10,7 +10,6 @@ from io import BytesIO
 from tempfile import NamedTemporaryFile
 
 from calibre import guess_type
-from calibre.constants import ispy3
 from calibre.srv.tests.base import BaseTest, TestServer
 from calibre.srv.utils import eintr_retry_call
 from calibre.utils.monotonic import monotonic
@@ -76,7 +75,6 @@ class TestHTTP(BaseTest):
     def test_accept_language(self):  # {{{
         'Test parsing of Accept-Language'
         from calibre.srv.http_response import preferred_lang
-        from calibre.utils.localization import get_translator
 
         def test(name, val, ans):
             self.ae(preferred_lang(val, lambda x:(True, x, None)), ans, name + ' failed')
@@ -85,18 +83,27 @@ class TestHTTP(BaseTest):
         test('Case insensitive', 'Es', 'es')
         test('Multiple', 'fr, es', 'fr')
         test('Priority', 'en;q=0.1, de;q=0.7, fr;q=0.5', 'de')
+        try:
+            self.do_accept_language()
+        except Exception:
+            # this test is flaky on the Linux CI machines
+            time.sleep(3)
+            self.do_accept_language()
+
+    def do_accept_language(self):
+        from calibre.utils.localization import get_translator
 
         def handler(data):
             return data.lang_code + data._('Unknown')
 
-        with TestServer(handler, timeout=0.3) as server:
+        with TestServer(handler, timeout=1) as server:
             conn = server.connect()
 
             def test(al, q):
                 conn.request('GET', '/', headers={'Accept-Language': al})
                 r = conn.getresponse()
                 self.ae(r.status, http_client.OK)
-                q += getattr(get_translator(q)[-1], 'gettext' if ispy3 else 'ugettext')('Unknown')
+                q += get_translator(q)[-1].gettext('Unknown')
                 self.ae(r.read(), q.encode('utf-8'))
 
             test('en', 'en')
@@ -129,6 +136,14 @@ class TestHTTP(BaseTest):
 
     def test_http_basic(self):  # {{{
         'Test basic HTTP protocol conformance'
+        try:
+            self.do_http_basic()
+        except Exception:
+            # this test is a little flaky on the windows CI machine.
+            time.sleep(3)
+            self.do_http_basic()
+
+    def do_http_basic(self):
         from calibre.srv.errors import HTTPNotFound, HTTPRedirect
         body = 'Requested resource not found'
 
@@ -181,14 +196,11 @@ class TestHTTP(BaseTest):
             self.ae(r.read(), b'Requested resource not found')
 
             # Test 500
-            orig = server.loop.log.filter_level
-            server.loop.log.filter_level = server.loop.log.ERROR + 10
             server.change_handler(lambda data:1/0)
             conn = server.connect()
             conn.request('GET', '/test/')
             r = conn.getresponse()
             self.ae(r.status, http_client.INTERNAL_SERVER_ERROR)
-            server.loop.log.filter_level = orig
 
             # Test 301
             def handler(data):
@@ -229,9 +241,6 @@ class TestHTTP(BaseTest):
             self.ae(r.status, http_client.OK)
             self.ae(r.read(), b'testbody1234567890')
 
-            # Test various incorrect input
-            orig_level, server.log.filter_level = server.log.filter_level, server.log.ERROR
-
             conn.request('GET', '/test' + ('a' * 200))
             r = conn.getresponse()
             self.ae(r.status, http_client.BAD_REQUEST)
@@ -269,7 +278,6 @@ class TestHTTP(BaseTest):
             self.ae(r.status, http_client.REQUEST_TIMEOUT)
             self.assertIn(b'', r.read())
 
-            server.log.filter_level = orig_level
             conn = server.connect()
 
             # Test closing

@@ -1,19 +1,21 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import zlib, json, os
-from io import BytesIO
+import json
+import os
+import zlib
 from functools import partial
+from io import BytesIO
 
 from calibre.ebooks.metadata.meta import get_metadata
 from calibre.srv.tests.base import LibraryBaseTest
-from polyglot.http_client import OK, NOT_FOUND, FORBIDDEN
-from polyglot.urllib import urlencode, quote
 from polyglot.binary import as_base64_bytes
+from polyglot.http_client import FORBIDDEN, NOT_FOUND, OK
+from polyglot.urllib import quote, urlencode
 
 
 def make_request(conn, url, headers={}, prefix='/ajax', username=None, password=None, method='GET', data=None):
@@ -35,7 +37,6 @@ class ContentTest(LibraryBaseTest):
             db = server.handler.router.ctx.library_broker.get(None)
             conn = server.connect()
             request = partial(make_request, conn, prefix='/ajax/book')
-
             r, data = request('/x')
             self.ae(r.status, NOT_FOUND)
 

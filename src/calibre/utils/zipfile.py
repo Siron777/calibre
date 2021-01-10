@@ -1,17 +1,24 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 """
 Read and write ZIP files. Modified by Kovid Goyal to support replacing files in
 a zip archive, detecting filename encoding, updating zip files, etc.
 """
-import struct, os, time, sys, shutil, stat, re, io
 import binascii
+import io
+import os
+import re
+import shutil
+import stat
+import struct
+import sys
+import time
 from contextlib import closing
-from tempfile import SpooledTemporaryFile
 
 from calibre import sanitize_file_name
 from calibre.constants import filesystem_encoding
 from calibre.ebooks.chardet import detect
-from polyglot.builtins import unicode_type, string_or_bytes, getcwd, map, as_bytes
+from calibre.ptempfile import SpooledTemporaryFile
+from polyglot.builtins import getcwd, map, string_or_bytes, unicode_type, as_bytes
 
 try:
     import zlib  # We may need its compression method
@@ -22,6 +29,11 @@ except ImportError:
 
 __all__ = ["BadZipfile", "error", "ZIP_STORED", "ZIP_DEFLATED", "is_zipfile",
            "ZipInfo", "ZipFile", "PyZipFile", "LargeZipFile"]
+
+
+def decode_zip_internal_file_name(fname, flags):
+    codec = 'utf-8' if flags & 0x800 else 'cp437'
+    return fname.decode(codec, 'replace')
 
 
 class BadZipfile(Exception):
@@ -400,12 +412,6 @@ class ZipInfo (object):
         else:
             return self.filename, self.flag_bits
 
-    def _decodeFilename(self):
-        if self.flag_bits & 0x800:
-            return self.filename.decode('utf-8')
-        else:
-            return decode_arcname(self.filename)
-
     def _decodeExtra(self):
         # Try to decode the extra field.
         extra = self.extra
@@ -742,7 +748,6 @@ class ZipFile:
         self.debug = 0  # Level of printing: 0 through 3
         self.NameToInfo = {}    # Find file info given name
         self.filelist = []      # List of ZipInfo instances for archive
-        self.extract_mapping = {}
         self.compression = compression  # Method of compression
         self.mode = key = mode.replace('b', '')[0]
         self.pwd = None
@@ -847,6 +852,8 @@ class ZipFile:
             if self.debug > 2:
                 print(centdir)
             filename = fp.read(centdir[_CD_FILENAME_LENGTH])
+            flags = centdir[5]
+            filename = decode_zip_internal_file_name(filename, flags)
             # Create ZipInfo instance to store file information
             x = ZipInfo(filename)
             x.extra = fp.read(centdir[_CD_EXTRA_FIELD_LENGTH])
@@ -863,7 +870,6 @@ class ZipFile:
 
             x._decodeExtra()
             x.header_offset = x.header_offset + concat
-            x.filename = x._decodeFilename()
             self.filelist.append(x)
             self.NameToInfo[x.filename] = x
 
@@ -890,6 +896,7 @@ class ZipFile:
                            fheader[_FH_FILENAME_LENGTH] +
                            fheader[_FH_EXTRA_FIELD_LENGTH])
             fname = self.fp.read(fheader[_FH_FILENAME_LENGTH])
+            fname = decode_zip_internal_file_name(fname, zip_info.flag_bits)
             if fname != zip_info.orig_filename:
                 raise RuntimeError(
                       'File name in directory "%s" and header "%s" differ.' % (
@@ -1035,6 +1042,7 @@ class ZipFile:
 
         fheader = struct.unpack(structFileHeader, fheader)
         fname = zef_file.read(fheader[_FH_FILENAME_LENGTH])
+        fname = decode_zip_internal_file_name(fname, zinfo.flag_bits)
         if fheader[_FH_EXTRA_FIELD_LENGTH]:
             zef_file.read(fheader[_FH_EXTRA_FIELD_LENGTH])
 
@@ -1146,8 +1154,11 @@ class ZipFile:
 
         if member.filename[-1] == '/':
             if not os.path.isdir(targetpath):
-                os.mkdir(targetpath)
-            self.extract_mapping[member.filename] = targetpath
+                try:
+                    os.mkdir(targetpath)
+                except Exception:  # Added by Kovid
+                    targetpath = os.path.join(base_target, sanitize_file_name(fname))
+                    os.mkdir(targetpath)
             return targetpath
 
         if not os.path.exists(targetpath):
@@ -1171,7 +1182,6 @@ class ZipFile:
             os.utime(targetpath, (mtime, mtime))
         except:
             pass
-        self.extract_mapping[member.filename] = targetpath
         return targetpath
 
     def _writecheck(self, zinfo):

@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -167,12 +167,12 @@ class AutoAdder(QObject):
             self.watcher = QFileSystemWatcher(self)
             self.worker = Worker(path, self.metadata_read.emit)
             self.watcher.directoryChanged.connect(self.dir_changed,
-                    type=Qt.QueuedConnection)
+                    type=Qt.ConnectionType.QueuedConnection)
             self.metadata_read.connect(self.add_to_db,
-                    type=Qt.QueuedConnection)
+                    type=Qt.ConnectionType.QueuedConnection)
             QTimer.singleShot(2000, self.initialize)
             self.auto_convert.connect(self.do_auto_convert,
-                    type=Qt.QueuedConnection)
+                    type=Qt.ConnectionType.QueuedConnection)
         elif path:
             prints(path,
                 'is not a valid directory to watch for new ebooks, ignoring')
@@ -206,7 +206,7 @@ class AutoAdder(QObject):
             self.worker.join()
 
     def __enter__(self):
-        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
 
     def __exit__(self, *args):
         QApplication.restoreOverrideCursor()

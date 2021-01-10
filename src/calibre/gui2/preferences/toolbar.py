@@ -1,13 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from PyQt5.Qt import QAbstractListModel, Qt, QIcon, \
-        QItemSelectionModel
+from PyQt5.Qt import QAbstractListModel, Qt, QIcon, QItemSelectionModel
 
 from calibre import force_unicode
 from calibre.gui2.preferences.toolbar_ui import Ui_Form
@@ -64,13 +63,13 @@ class BaseModel(QAbstractListModel):
     def data(self, index, role):
         row = index.row()
         action = self._data[row].action_spec
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             text = action[0]
             text = text.replace('&', '')
             if text == _('%d books'):
                 text = _('Choose library')
             return (text)
-        if role == Qt.DecorationRole:
+        if role == Qt.ItemDataRole.DecorationRole:
             if hasattr(self._data[row], 'qaction'):
                 icon = self._data[row].qaction.icon()
                 if not icon.isNull():
@@ -79,7 +78,7 @@ class BaseModel(QAbstractListModel):
             if ic is None:
                 ic = 'blank.png'
             return (QIcon(I(ic)))
-        if role == Qt.ToolTipRole and action[2] is not None:
+        if role == Qt.ItemDataRole.ToolTipRole and action[2] is not None:
             return (action[2])
         return None
 
@@ -167,9 +166,7 @@ class CurrentModel(BaseModel):
 
     def move(self, idx, delta):
         row = idx.row()
-        if row < 0 or row >= len(self._data):
-            return
-        nrow = row + delta
+        nrow = (row + delta + len(self._data)) % len(self._data)
         if nrow < 0 or nrow >= len(self._data):
             return
         t = self._data[row]
@@ -179,6 +176,14 @@ class CurrentModel(BaseModel):
         self.dataChanged.emit(idx, idx)
         self.dataChanged.emit(ni, ni)
         return ni
+
+    def move_many(self, indices, delta):
+        indices = sorted(indices, key=lambda i: i.row(), reverse=delta > 0)
+        ans = {}
+        for idx in indices:
+            ni = self.move(idx, delta)
+            ans[idx.row()] = ni
+        return ans
 
     def add(self, names):
         actions = []
@@ -276,11 +281,11 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.current_actions.entered.connect(self.current_entered)
 
     def all_entered(self, index):
-        tt = self.all_actions.model().data(index, Qt.ToolTipRole) or ''
+        tt = self.all_actions.model().data(index, Qt.ItemDataRole.ToolTipRole) or ''
         self.help_text.setText(tt)
 
     def current_entered(self, index):
-        tt = self.current_actions.model().data(index, Qt.ToolTipRole) or ''
+        tt = self.current_actions.model().data(index, Qt.ItemDataRole.ToolTipRole) or ''
         self.help_text.setText(tt)
 
     def what_changed(self, idx):
@@ -330,15 +335,19 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
                 self.changed_signal.emit()
 
     def move(self, delta, *args):
-        ci = self.current_actions.currentIndex()
-        m = self.current_actions.model()
-        if ci.isValid():
-            ni = m.move(ci, delta)
-            if ni is not None:
-                self.current_actions.setCurrentIndex(ni)
-                self.current_actions.selectionModel().select(ni,
-                        QItemSelectionModel.ClearAndSelect)
-                self.changed_signal.emit()
+        sm = self.current_actions.selectionModel()
+        x = sm.selectedIndexes()
+        if x and len(x):
+            i = sm.currentIndex().row()
+            m = self.current_actions.model()
+            idx_map = m.move_many(x, delta)
+            newci = idx_map.get(i)
+            if newci is not None:
+                sm.setCurrentIndex(newci, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            sm.clear()
+            for idx in idx_map.values():
+                sm.select(idx, QItemSelectionModel.SelectionFlag.Select)
+            self.changed_signal.emit()
 
     def commit(self):
         # Ensure preferences are showing in either the toolbar or

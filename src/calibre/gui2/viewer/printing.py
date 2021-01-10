@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 import os
 import subprocess
@@ -9,7 +9,7 @@ import sys
 from threading import Thread
 
 from PyQt5.Qt import (
-    QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QIcon, QLabel,
+    QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QIcon, QLabel, QDialog,
     QLineEdit, QPageSize, QProgressDialog, QTimer, QToolButton, QVBoxLayout
 )
 
@@ -225,7 +225,7 @@ class Printing(QProgressDialog):
 def print_book(path_to_book, parent=None, book_title=None):
     book_title = book_title or os.path.splitext(os.path.basename(path_to_book))[0]
     d = PrintDialog(book_title, parent)
-    if d.exec_() == d.Accepted:
+    if d.exec_() == QDialog.DialogCode.Accepted:
         data = d.data
         data['input'] = path_to_book
         t = DoPrint(data)

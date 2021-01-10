@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -13,7 +13,7 @@ __all__ = [
     'git_version',
     'develop', 'install',
     'kakasi', 'rapydscript', 'cacerts', 'recent_uas', 'resources',
-    'check', 'to3', 'unicode_check', 'iterators_check', 'test',
+    'check', 'to3', 'unicode_check', 'iterators_check', 'test', 'test_rs',
     'sdist', 'bootstrap', 'extdev',
     'manual', 'tag_release',
     'upload_to_server',
@@ -21,7 +21,7 @@ __all__ = [
     'upload_user_manual', 'upload_demo', 'reupload',
     'stage1', 'stage2', 'stage3', 'stage4', 'stage5', 'publish', 'publish_betas',
     'linux', 'linux32', 'linux64', 'win', 'win32', 'win64', 'osx', 'build_dep',
-    'export_packages', 'hyphenation', 'csslint'
+    'export_packages', 'hyphenation', 'liberation_fonts', 'csslint'
 ]
 
 from setup.installers import Linux, Win, OSX, Linux32, Linux64, Win32, Win64, ExtDev, BuildDep, ExportPackages
@@ -51,6 +51,9 @@ mathjax = MathJax()
 from setup.hyphenation import Hyphenation
 hyphenation = Hyphenation()
 
+from setup.liberation import LiberationFonts
+liberation_fonts = LiberationFonts()
+
 from setup.git_version import GitVersion
 git_version = GitVersion()
 
@@ -70,8 +73,9 @@ to3 = To3()
 unicode_check = UnicodeCheck()
 iterators_check = IteratorsCheck()
 
-from setup.test import Test
+from setup.test import Test, TestRS
 test = Test()
+test_rs = TestRS()
 
 from setup.resources import Resources, Kakasi, CACerts, RapydScript, RecentUAs
 resources = Resources()

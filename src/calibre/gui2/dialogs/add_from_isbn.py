@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -40,13 +40,13 @@ class AddFromISBN(QDialog):
         self.l = l = QVBoxLayout(self)
         self.h = h = QHBoxLayout()
         l.addLayout(h)
-        self.bb = bb = QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel, self)
-        bb.button(bb.Ok).setText(_('&OK'))
+        self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel, self)
+        bb.button(QDialogButtonBox.StandardButton.Ok).setText(_('&OK'))
         l.addWidget(bb), bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         self.ll = l = QVBoxLayout()
         h.addLayout(l)
         self.isbn_box = i = QPlainTextEdit(self)
-        i.setFocus(Qt.OtherFocusReason)
+        i.setFocus(Qt.FocusReason.OtherFocusReason)
         l.addWidget(i)
         self.paste_button = b = QPushButton(_("&Paste from clipboard"), self)
         l.addWidget(b), b.clicked.connect(self.paste)

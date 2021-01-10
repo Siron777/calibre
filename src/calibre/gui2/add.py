@@ -1,33 +1,39 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import shutil, os, weakref, traceback, tempfile, time
-from threading import Thread
+import os
+import shutil
+import sys
+import tempfile
+import time
+import traceback
+import weakref
 from collections import OrderedDict
 from io import BytesIO
-from polyglot.builtins import iteritems, map, unicode_type, string_or_bytes
-
 from PyQt5.Qt import QObject, Qt, pyqtSignal
+from threading import Thread
 
-from calibre import prints, as_unicode
-from calibre.constants import DEBUG, iswindows, isosx, filesystem_encoding
-from calibre.customize.ui import run_plugins_on_postimport, run_plugins_on_postadd
-from calibre.db.adding import find_books_in_directory, compile_rule
+from calibre import as_unicode, prints
+from calibre.constants import DEBUG, filesystem_encoding, ismacos, iswindows
+from calibre.customize.ui import run_plugins_on_postadd, run_plugins_on_postimport
+from calibre.db.adding import compile_rule, find_books_in_directory
 from calibre.db.utils import find_identical_books
 from calibre.ebooks.metadata import authors_to_sort_string
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import OPF
-from calibre.gui2 import error_dialog, warning_dialog, gprefs
+from calibre.gui2 import error_dialog, gprefs, warning_dialog
 from calibre.gui2.dialogs.duplicates import DuplicatesQuestion
 from calibre.gui2.dialogs.progress import ProgressDialog
 from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils import join_with_timeout
 from calibre.utils.config import prefs
-from calibre.utils.ipc.pool import Pool, Failure
+from calibre.utils.filenames import make_long_path_useable
+from calibre.utils.ipc.pool import Failure, Pool
+from polyglot.builtins import iteritems, map, string_or_bytes, unicode_type
 from polyglot.queue import Empty
 
 
@@ -56,11 +62,34 @@ def validate_source(source, parent=None):  # {{{
 # }}}
 
 
+def resolve_windows_links(paths, hwnd=None):
+    try:
+        from calibre_extensions.winutil import resolve_lnk
+    except ImportError:
+        def resolve_lnk(x, *a):
+            return x
+    for x in paths:
+        if x.lower().endswith('.lnk'):
+            try:
+                if hwnd is None:
+                    x = resolve_lnk(x)
+                else:
+                    x = resolve_lnk(x, 0, hwnd)
+            except Exception as e:
+                print('Failed to resolve link', x, 'with error:', e, file=sys.stderr)
+                continue
+        yield x
+
+
 class Adder(QObject):
 
     do_one_signal = pyqtSignal()
 
     def __init__(self, source, single_book_per_directory=True, db=None, parent=None, callback=None, pool=None, list_of_archives=False):
+        if isinstance(source, str):
+            source = make_long_path_useable(source)
+        else:
+            source = list(map(make_long_path_useable, source))
         if not validate_source(source, parent):
             return
         QObject.__init__(self, parent)
@@ -73,9 +102,14 @@ class Adder(QObject):
         self.list_of_archives = list_of_archives
         self.callback = callback
         self.add_formats_to_existing = prefs['add_formats_to_existing']
-        self.do_one_signal.connect(self.tick, type=Qt.QueuedConnection)
+        self.do_one_signal.connect(self.tick, type=Qt.ConnectionType.QueuedConnection)
         self.pool = pool
         self.pd = ProgressDialog(_('Adding books...'), _('Scanning for files...'), min=0, max=0, parent=parent, icon='add_book.png')
+        self.win_id = None
+        if parent is not None and hasattr(parent, 'effectiveWinId'):
+            self.win_id = parent.effectiveWinId()
+            if self.win_id is not None:
+                self.win_id = int(self.win_id)
         self.db = getattr(db, 'new_api', None)
         if self.db is not None:
             self.dbref = weakref.ref(db)
@@ -134,13 +168,16 @@ class Adder(QObject):
             import traceback
             traceback.print_exc()
 
-        if iswindows or isosx:
+        if iswindows or ismacos:
             def find_files(root):
                 for dirpath, dirnames, filenames in os.walk(root):
                     for files in find_books_in_directory(dirpath, self.single_book_per_directory, compiled_rules=compiled_rules):
                         if self.abort_scan:
                             return
-                        self.file_groups[len(self.file_groups)] = files
+                        if iswindows:
+                            files = list(resolve_windows_links(files, hwnd=self.win_id))
+                        if files:
+                            self.file_groups[len(self.file_groups)] = files
         else:
             def find_files(root):
                 if isinstance(root, unicode_type):
@@ -186,7 +223,13 @@ class Adder(QObject):
                             find_files(extract(path))
                             self.ignore_opf = True
                         else:
-                            self.file_groups[len(self.file_groups)] = [path]
+                            x = [path]
+                            if iswindows:
+                                x = list(resolve_windows_links(x, hwnd=self.win_id))
+                            if x:
+                                self.file_groups[len(self.file_groups)] = x
+                            else:
+                                unreadable_files.append(path)
                     else:
                         unreadable_files.append(path)
                 if unreadable_files:

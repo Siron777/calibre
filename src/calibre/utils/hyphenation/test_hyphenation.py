@@ -1,8 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import shutil
@@ -56,7 +55,7 @@ class TestHyphenation(unittest.TestCase):
         t('en', 'en_US')
         t('en_IN', 'en_GB')
         t('de', 'de_DE')
-        t('es', 'es_ANY')
+        t('es', 'es')
         t('nl', 'nl_NL')
         t('fr', 'fr')
         t('XXX')

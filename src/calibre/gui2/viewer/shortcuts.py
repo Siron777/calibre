@@ -1,8 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 from PyQt5.Qt import QKeySequence, QMainWindow, Qt
 
@@ -25,7 +24,7 @@ def index_to_key_sequence(idx):
 
 
 def key_to_text(key):
-    return QKeySequence(key).toString(QKeySequence.PortableText).lower()
+    return QKeySequence(key).toString(QKeySequence.SequenceFormat.PortableText).lower()
 
 
 def ev_to_index(ev):

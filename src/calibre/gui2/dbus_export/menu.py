@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -62,7 +62,7 @@ def create_properties_for_action(ac, previous=None):
             data = icon_to_dbus_menu_icon(ac.icon())
             if data is not None:
                 ans['icon-data'] = data
-                ans['x-qt-icon-cache-key'] = icon.cacheKey()
+                ans['x-qt-icon-cache-key'] = dbus.UInt64(icon.cacheKey())
     return ans
 
 
@@ -83,7 +83,7 @@ class DBusMenu(QObject):
         QObject.__init__(self, parent)
         # Unity barfs is the Event DBUS method does not return immediately, so
         # handle it asynchronously
-        self.handle_event_signal.connect(self.handle_event, type=Qt.QueuedConnection)
+        self.handle_event_signal.connect(self.handle_event, type=Qt.ConnectionType.QueuedConnection)
         self.dbus_api = DBusMenuAPI(self, object_path, bus=bus)
         self.set_status = self.dbus_api.set_status
         self._next_id = 0
@@ -167,17 +167,17 @@ class DBusMenu(QObject):
     def eventFilter(self, obj, ev):
         ac = getattr(obj, 'menuAction', lambda : None)()
         ac_id = self.action_to_id(ac)
-        if ac_id is not None:
+        if ac_id is not None and hasattr(ev, 'action'):
             etype = ev.type()
-            if etype == QEvent.ActionChanged:
+            if etype == QEvent.Type.ActionChanged:
                 ac_id = self.action_to_id(ev.action())
                 self.action_changes.add(ac_id)
                 self.action_changed_timer.start()
-            elif etype == QEvent.ActionAdded:
+            elif etype == QEvent.Type.ActionAdded:
                 self.layout_changes.add(ac_id)
                 self.layout_changed_timer.start()
                 self.add_action(ev.action())
-            elif etype == QEvent.ActionRemoved:
+            elif etype == QEvent.Type.ActionRemoved:
                 self.layout_changes.add(ac_id)
                 self.layout_changed_timer.start()
                 self.action_removed(ev.action())

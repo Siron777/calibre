@@ -18,7 +18,6 @@ from datetime import date
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(base)
 sys.path.insert(0, os.path.dirname(base))
-ispy3 = sys.version_info.major > 2
 from setup import __appname__, __version__
 import calibre.utils.localization as l  # Ensure calibre translations are installed
 import custom
@@ -101,7 +100,7 @@ if language not in {'en', 'eng'}:
     except IOError:
         pass
     else:
-        title = getattr(t, 'gettext' if ispy3 else 'ugettext')(title)
+        title = t.gettext(title)
 
 # If true, '()' will be appended to :func: etc. cross-reference text.
 # add_function_parentheses = True
@@ -149,6 +148,7 @@ html_favicon = '../icons/favicon.ico'
 # relative to this directory. They are copied after the built-in static files,
 # so a file named "default.css" will overwrite the built-in "default.css".
 html_static_path = ['resources', '../icons/favicon.ico']
+html_css_files = ['custom.css']
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.

@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -13,7 +13,7 @@ from PyQt5.Qt import (QToolButton, QAction, QIcon, QObject, QMenu,
         QKeySequence)
 
 from calibre import prints
-from calibre.constants import isosx
+from calibre.constants import ismacos
 from calibre.gui2 import Dispatcher
 from calibre.gui2.keyboard import NameConflict
 from polyglot.builtins import unicode_type, string_or_bytes
@@ -66,7 +66,7 @@ class InterfaceAction(QObject):
     priority = 1
 
     #: The menu popup type for when this plugin is added to a toolbar
-    popup_type = QToolButton.MenuButtonPopup
+    popup_type = QToolButton.ToolButtonPopupMode.MenuButtonPopup
 
     #: Whether this action should be auto repeated when its shortcut
     #: key is held down.
@@ -154,7 +154,7 @@ class InterfaceAction(QObject):
             bn = self.interface_action_base_plugin.name
         return 'Interface Action: %s (%s)'%(bn, self.name)
 
-    def create_action(self, spec=None, attr='qaction', shortcut_name=None):
+    def create_action(self, spec=None, attr='qaction', shortcut_name=None, persist_shortcut=False):
         if spec is None:
             spec = self.action_spec
         text, icon, tooltip, shortcut = spec
@@ -186,22 +186,23 @@ class InterfaceAction(QObject):
                 shortcut_name = unicode_type(spec[0])
 
             if shortcut_name and self.action_spec[0] and not (
-                    attr == 'qaction' and self.popup_type == QToolButton.InstantPopup):
+                    attr == 'qaction' and self.popup_type == QToolButton.ToolButtonPopupMode.InstantPopup):
                 try:
                     self.gui.keyboard.register_shortcut(self.unique_name + ' - ' + attr,
                         shortcut_name, default_keys=keys,
                         action=shortcut_action, description=desc,
-                        group=self.action_spec[0])
+                        group=self.action_spec[0],
+                        persist_shortcut=persist_shortcut)
                 except NameConflict as e:
                     try:
                         prints(unicode_type(e))
                     except:
                         pass
                     shortcut_action.setShortcuts([QKeySequence(key,
-                        QKeySequence.PortableText) for key in keys])
+                        QKeySequence.SequenceFormat.PortableText) for key in keys])
                 else:
                     self.shortcut_action_for_context_menu = shortcut_action
-                    if isosx:
+                    if ismacos:
                         # In Qt 5 keyboard shortcuts dont work unless the
                         # action is explicitly added to the main window
                         self.gui.addAction(shortcut_action)
@@ -216,7 +217,7 @@ class InterfaceAction(QObject):
         return action
 
     def create_menu_action(self, menu, unique_name, text, icon=None, shortcut=None,
-            description=None, triggered=None, shortcut_name=None):
+            description=None, triggered=None, shortcut_name=None, persist_shortcut=False):
         '''
         Convenience method to easily add actions to a QMenu.
         Returns the created QAction. This action has one extra attribute
@@ -225,8 +226,8 @@ class InterfaceAction(QObject):
 
         :param menu: The QMenu the newly created action will be added to
         :param unique_name: A unique name for this action, this must be
-            globally unique, so make it as descriptive as possible. If in doubt add
-            a uuid to it.
+            globally unique, so make it as descriptive as possible. If in doubt, add
+            an UUID to it.
         :param text: The text of the action.
         :param icon: Either a QIcon or a file name. The file name is passed to
             the I() builtin, so you do not need to pass the full path to the images
@@ -242,6 +243,10 @@ class InterfaceAction(QObject):
         :param shortcut_name: The text displayed to the user when customizing
             the keyboard shortcuts for this action. By default it is set to the
             value of ``text``.
+        :param persist_shortcut: Shortcuts for actions that don't
+            always appear, or are library dependent, may disappear
+            when other keyboard shortcuts are edited unless
+            ```persist_shortcut``` is set True.
 
         '''
         if shortcut_name is None:
@@ -265,7 +270,8 @@ class InterfaceAction(QObject):
         if shortcut is not False:
             self.gui.keyboard.register_shortcut(unique_name,
                 shortcut_name, default_keys=keys,
-                action=ac, description=description, group=self.action_spec[0])
+                action=ac, description=description, group=self.action_spec[0],
+                persist_shortcut=persist_shortcut)
             # In Qt 5 keyboard shortcuts dont work unless the
             # action is explicitly added to the main window and on OSX and
             # Unity since the menu might be exported, the shortcuts wont work

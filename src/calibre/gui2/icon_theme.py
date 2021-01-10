@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -14,9 +14,9 @@ from multiprocessing.pool import ThreadPool
 from PyQt5.Qt import (
     QImageReader, QFormLayout, QVBoxLayout, QSplitter, QGroupBox, QListWidget,
     QLineEdit, QSpinBox, QTextEdit, QSize, QListWidgetItem, QIcon, QImage,
-    pyqtSignal, QStackedLayout, QWidget, QLabel, Qt, QComboBox, QPixmap,
+    pyqtSignal, QStackedLayout, QWidget, QLabel, Qt, QComboBox, QPixmap, QDialog,
     QGridLayout, QStyledItemDelegate, QApplication, QStaticText,
-    QStyle, QPen, QProgressDialog
+    QStyle, QPen, QProgressDialog, QAbstractItemView, QDialogButtonBox
 )
 try:
     from PyQt5 import sip
@@ -37,7 +37,6 @@ from calibre.utils.icu import numeric_sort_key as sort_key
 from calibre.utils.img import image_from_data, Canvas, optimize_png, optimize_jpeg
 from calibre.utils.zipfile import ZipFile, ZIP_STORED
 from calibre.utils.filenames import atomic_rename
-from calibre_lzma.xz import compress, decompress
 from polyglot.builtins import iteritems, map, range, reraise, filter, as_bytes, unicode_type
 from polyglot import http_client
 from polyglot.queue import Queue, Empty
@@ -184,7 +183,7 @@ def create_cover(report, icons=(), cols=5, size=120, padding=16):
             with lopen(ipath, 'rb') as f:
                 img = image_from_data(f.read())
             scaled, nwidth, nheight = fit_image(img.width(), img.height(), size, size)
-            img = img.scaled(nwidth, nheight, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            img = img.scaled(nwidth, nheight, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
             dx = (size - nwidth) // 2
             canvas.compose(img, x + dx, y)
     return canvas.export()
@@ -215,10 +214,10 @@ class ThemeCreateDialog(Dialog):
         self.w = w = QGroupBox(_('Theme Metadata'), self)
         self.splitter.addWidget(w)
         l = w.l = QFormLayout(w)
-        l.setFieldGrowthPolicy(l.ExpandingFieldsGrow)
+        l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.missing_icons_group = mg = QGroupBox(self)
         self.mising_icons = mi = QListWidget(mg)
-        mi.setSelectionMode(mi.NoSelection)
+        mi.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         mg.l = QVBoxLayout(mg)
         mg.l.addWidget(mi)
         self.splitter.addWidget(mg)
@@ -238,7 +237,7 @@ class ThemeCreateDialog(Dialog):
             ' Creative Commons or Public Domain.'))
         self.description = QTextEdit(self)
         l.addRow(self.description)
-        self.refresh_button = rb = self.bb.addButton(_('&Refresh'), self.bb.ActionRole)
+        self.refresh_button = rb = self.bb.addButton(_('&Refresh'), QDialogButtonBox.ButtonRole.ActionRole)
         rb.setIcon(QIcon(I('view-refresh.png')))
         rb.clicked.connect(self.refresh)
 
@@ -313,7 +312,7 @@ class Compress(QProgressDialog):
         self.setWindowTitle(self.labelText())
         self.setWindowIcon(QIcon(I('lt.png')))
         self.setMinimumDuration(0)
-        self.update_signal.connect(self.do_update, type=Qt.QueuedConnection)
+        self.update_signal.connect(self.do_update, type=Qt.ConnectionType.QueuedConnection)
         self.raw = self.prefix = None
         self.abort = Event()
         self.canceled.connect(self.abort.set)
@@ -385,12 +384,12 @@ def create_themeball(report, progress=None, abort=None):
             with lopen(srcpath, 'rb') as f:
                 zf.writestr(name, f.read(), compression=ZIP_STORED)
     buf.seek(0)
-    out = BytesIO()
     if abort is not None and abort.is_set():
         return None, None
     if progress is not None:
         progress(next(num), _('Compressing theme file'))
-    compress(buf, out, level=9)
+    import lzma
+    compressed = lzma.compress(buf.getvalue(), format=lzma.FORMAT_XZ, preset=9)
     buf = BytesIO()
     prefix = report.name
     if abort is not None and abort.is_set():
@@ -399,7 +398,7 @@ def create_themeball(report, progress=None, abort=None):
         with lopen(os.path.join(report.path, THEME_METADATA), 'rb') as f:
             zf.writestr(prefix + '/' + THEME_METADATA, f.read())
         zf.writestr(prefix + '/' + THEME_COVER, create_cover(report))
-        zf.writestr(prefix + '/' + 'icons.zip.xz', out.getvalue(), compression=ZIP_STORED)
+        zf.writestr(prefix + '/' + 'icons.zip.xz', compressed, compression=ZIP_STORED)
     if progress is not None:
         progress(next(num), _('Finished'))
     return buf.getvalue(), prefix
@@ -413,7 +412,7 @@ def create_theme(folder=None, parent=None):
             return
     report = read_theme_from_folder(folder)
     d = ThemeCreateDialog(parent, report)
-    if d.exec_() != d.Accepted:
+    if d.exec_() != QDialog.DialogCode.Accepted:
         return
     d.save_metadata()
     d = Compress(d.report, parent=parent)
@@ -523,15 +522,15 @@ class Delegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         QStyledItemDelegate.paint(self, painter, option, empty_index)
-        theme = index.data(Qt.UserRole)
+        theme = index.data(Qt.ItemDataRole.UserRole)
         if not theme:
             return
         painter.save()
-        pixmap = index.data(Qt.DecorationRole)
+        pixmap = index.data(Qt.ItemDataRole.DecorationRole)
         if pixmap and not pixmap.isNull():
             rect = option.rect.adjusted(0, self.SPACING, COVER_SIZE[0] - option.rect.width(), - self.SPACING)
             painter.drawPixmap(rect, pixmap)
-        if option.state & QStyle.State_Selected:
+        if option.state & QStyle.StateFlag.State_Selected:
             painter.setPen(QPen(QApplication.instance().palette().highlightedText().color()))
         bottom = option.rect.bottom() - 2
         painter.drawLine(0, bottom, option.rect.right(), bottom)
@@ -560,9 +559,9 @@ class DownloadProgress(ProgressDialog):
     def __init__(self, parent, size):
         ProgressDialog.__init__(self, _('Downloading icons...'), _(
             'Downloading icons, please wait...'), max=size, parent=parent, icon='download_metadata.png')
-        self.ds.connect(self.bar.setValue, type=Qt.QueuedConnection)
-        self.acc.connect(self.accept, type=Qt.QueuedConnection)
-        self.rej.connect(self.reject, type=Qt.QueuedConnection)
+        self.ds.connect(self.bar.setValue, type=Qt.ConnectionType.QueuedConnection)
+        self.acc.connect(self.accept, type=Qt.ConnectionType.QueuedConnection)
+        self.rej.connect(self.reject, type=Qt.ConnectionType.QueuedConnection)
 
     def downloaded(self, byte_count):
         self.ds.emit(byte_count)
@@ -587,8 +586,8 @@ class ChooseTheme(Dialog):
         Dialog.__init__(self, _('Choose an icon theme'), 'choose-icon-theme-dialog', parent)
         self.finished.connect(self.on_finish)
         self.dialog_closed = False
-        self.themes_downloaded.connect(self.show_themes, type=Qt.QueuedConnection)
-        self.cover_downloaded.connect(self.set_cover, type=Qt.QueuedConnection)
+        self.themes_downloaded.connect(self.show_themes, type=Qt.ConnectionType.QueuedConnection)
+        self.cover_downloaded.connect(self.set_cover, type=Qt.ConnectionType.QueuedConnection)
         self.keep_downloading = True
         self.commit_changes = None
         self.new_theme_title = None
@@ -606,14 +605,14 @@ class ChooseTheme(Dialog):
         self.stack = l = QStackedLayout()
         self.pi = pi = ProgressIndicator(self, 256)
         vl.addLayout(l), vl.addWidget(self.bb)
-        self.restore_defs_button = b = self.bb.addButton(_('Restore &default icons'), self.bb.ActionRole)
+        self.restore_defs_button = b = self.bb.addButton(_('Restore &default icons'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.restore_defaults)
         b.setIcon(QIcon(I('view-refresh.png')))
         self.c = c = QWidget(self)
         self.c.v = v = QVBoxLayout(self.c)
-        v.addStretch(), v.addWidget(pi, 0, Qt.AlignCenter)
+        v.addStretch(), v.addWidget(pi, 0, Qt.AlignmentFlag.AlignCenter)
         self.wait_msg = m = QLabel(self)
-        v.addWidget(m, 0, Qt.AlignCenter), v.addStretch()
+        v.addWidget(m, 0, Qt.AlignmentFlag.AlignCenter), v.addStretch()
         f = m.font()
         f.setBold(True), f.setPointSize(28), m.setFont(f)
         self.start_spinner()
@@ -646,7 +645,7 @@ class ChooseTheme(Dialog):
         sb.currentIndexChanged[int].connect(self.re_sort)
         sb.currentIndexChanged[int].connect(lambda : gprefs.set('choose_icon_theme_sort_by', sb.currentIndex()))
         self.theme_list = tl = QListWidget(self)
-        tl.setVerticalScrollMode(tl.ScrollPerPixel)
+        tl.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.delegate = Delegate(tl)
         tl.setItemDelegate(self.delegate)
         tl.itemDoubleClicked.connect(self.accept)
@@ -679,9 +678,9 @@ class ChooseTheme(Dialog):
         self.theme_list.clear()
         for theme in self.themes:
             i = QListWidgetItem(theme.get('title', '') + ' %s %s' % (theme.get('number'), self.usage.get(theme.get('name'))), self.theme_list)
-            i.setData(Qt.UserRole, theme)
+            i.setData(Qt.ItemDataRole.UserRole, theme)
             if 'cover-pixmap' in theme:
-                i.setData(Qt.DecorationRole, theme['cover-pixmap'])
+                i.setData(Qt.ItemDataRole.DecorationRole, theme['cover-pixmap'])
 
     def get_themes(self):
 
@@ -726,7 +725,7 @@ class ChooseTheme(Dialog):
 
     def item_from_name(self, name):
         for item in self:
-            if item.data(Qt.UserRole)['name'] == name:
+            if item.data(Qt.ItemDataRole.UserRole)['name'] == name:
                 return item
 
     def set_cover(self, theme, cdata):
@@ -740,7 +739,7 @@ class ChooseTheme(Dialog):
             p.setDevicePixelRatio(dpr)
         item = self.item_from_name(theme['name'])
         if item is not None:
-            item.setData(Qt.DecorationRole, p)
+            item.setData(Qt.ItemDataRole.DecorationRole, p)
 
     def restore_defaults(self):
         if self.current_theme is not None:
@@ -755,7 +754,7 @@ class ChooseTheme(Dialog):
         if self.theme_list.currentRow() < 0:
             return error_dialog(self, _('No theme selected'), _(
                 'You must first select an icon theme'), show=True)
-        theme = self.theme_list.currentItem().data(Qt.UserRole)
+        theme = self.theme_list.currentItem().data(Qt.ItemDataRole.UserRole)
         url = BASE_URL + theme['icons-url']
         size = theme['compressed-size']
         theme = {k:theme.get(k, '') for k in 'name title version'.split()}
@@ -789,13 +788,14 @@ class ChooseTheme(Dialog):
         if self.downloaded_theme and not isinstance(self.downloaded_theme, BytesIO):
             return error_dialog(self, _('Download failed'), _(
                 'Failed to download icon theme, click "Show Details" for more information.'), show=True, det_msg=self.downloaded_theme)
-        if ret == d.Rejected or not self.keep_downloading or d.canceled or self.downloaded_theme is None:
+        if ret == QDialog.DialogCode.Rejected or not self.keep_downloading or d.canceled or self.downloaded_theme is None:
             return
         dt = self.downloaded_theme
 
         def commit_changes():
+            import lzma
             dt.seek(0)
-            f = decompress(dt)
+            f = BytesIO(lzma.decompress(dt.getvalue()))
             f.seek(0)
             remove_icon_theme()
             install_icon_theme(theme, f)
@@ -865,6 +865,6 @@ if __name__ == '__main__':
     app = Application([])
     # create_theme('.')
     d = ChooseTheme()
-    if d.exec_() == d.Accepted and d.commit_changes is not None:
+    if d.exec_() == QDialog.DialogCode.Accepted and d.commit_changes is not None:
         d.commit_changes()
     del app

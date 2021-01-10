@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -240,13 +240,13 @@ class Widget(QWidget):
             else:
                 g.setCurrentIndex(0)
         elif isinstance(g, QComboBox) and val:
-            idx = g.findText(val, Qt.MatchFixedString)
+            idx = g.findText(val, Qt.MatchFlag.MatchFixedString)
             if idx < 0:
                 g.addItem(val)
-                idx = g.findText(val, Qt.MatchFixedString)
+                idx = g.findText(val, Qt.MatchFlag.MatchFixedString)
             g.setCurrentIndex(idx)
         elif isinstance(g, QCheckBox):
-            g.setCheckState(Qt.Checked if bool(val) else Qt.Unchecked)
+            g.setCheckState(Qt.CheckState.Checked if bool(val) else Qt.CheckState.Unchecked)
         elif isinstance(g, (XPathEdit, RegexEdit)):
             g.edit.setText(val if val else '')
         else:

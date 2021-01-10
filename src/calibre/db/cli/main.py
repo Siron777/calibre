@@ -1,8 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
-
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import json
 import os
@@ -36,24 +34,11 @@ def option_parser_for(cmd, args=()):
     return cmd_option_parser
 
 
-def send_message(msg=''):
-    prints('Notifying calibre of the change')
-    from calibre.utils.ipc import RC
-    t = RC(print_error=False)
-    t.start()
-    t.join(3)
-    if t.done:
-        t.conn.send('refreshdb:' + msg)
-        t.conn.close()
-
-
 def run_cmd(cmd, opts, args, dbctx):
     m = module_for_cmd(cmd)
     if dbctx.is_remote and getattr(m, 'no_remote', False):
         raise SystemExit(_('The {} command is not supported with remote (server based) libraries').format(cmd))
     ret = m.main(opts, args, dbctx)
-    # if not dbctx.is_remote and not opts.dont_notify_gui and not getattr(m, 'readonly', False):
-    #     send_message()
     return ret
 
 
@@ -125,7 +110,7 @@ def read_credentials(opts):
     pw = opts.password
     if pw:
         if pw == '<stdin>':
-            from calibre.utils.unicode_getpass import getpass
+            from getpass import getpass
             pw = getpass(_('Enter the password: '))
         elif pw.startswith('<f:') and pw.endswith('>'):
             with lopen(pw[3:-1], 'rb') as f:
@@ -215,7 +200,8 @@ class DBCtx(object):
             self.interpret_http_error(err)
             raise
         if 'err' in ans:
-            prints(ans['tb'])
+            if ans['tb']:
+                prints(ans['tb'])
             raise SystemExit(ans['err'])
         return ans['result']
 

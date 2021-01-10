@@ -1,18 +1,19 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import os, sys, zipfile, importlib
 
-from calibre.constants import numeric_version, iswindows, isosx
+from calibre.constants import numeric_version, iswindows, ismacos
 from calibre.ptempfile import PersistentTemporaryFile
 from polyglot.builtins import unicode_type
 
-platform = 'linux'
 if iswindows:
     platform = 'windows'
-elif isosx:
+elif ismacos:
     platform = 'osx'
+else:
+    platform = 'linux'
 
 
 class PluginNotFound(ValueError):
@@ -140,7 +141,7 @@ class Plugin(object):  # {{{
         geom = gprefs.get(prefname, None)
 
         config_dialog = QDialog(parent)
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         v = QVBoxLayout(config_dialog)
 
         def size_dialog():
@@ -170,7 +171,7 @@ class Plugin(object):  # {{{
             size_dialog()
             config_dialog.exec_()
 
-            if config_dialog.result() == QDialog.Accepted:
+            if config_dialog.result() == QDialog.DialogCode.Accepted:
                 if hasattr(config_widget, 'validate'):
                     if config_widget.validate():
                         self.save_settings(config_widget)
@@ -182,7 +183,7 @@ class Plugin(object):  # {{{
             help_text = self.customization_help(gui=True)
             help_text = QLabel(help_text, config_dialog)
             help_text.setWordWrap(True)
-            help_text.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)
+            help_text.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse | Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
             help_text.setOpenExternalLinks(True)
             v.addWidget(help_text)
             sc = plugin_customization(self)
@@ -195,7 +196,7 @@ class Plugin(object):  # {{{
             size_dialog()
             config_dialog.exec_()
 
-            if config_dialog.result() == QDialog.Accepted:
+            if config_dialog.result() == QDialog.DialogCode.Accepted:
                 sc = unicode_type(sc.text()).strip()
                 customize_plugin(self, sc)
 
@@ -478,13 +479,13 @@ class CatalogPlugin(Plugin):  # {{{
 
     type = _('Catalog generator')
 
-    #: CLI parser options specific to this plugin, declared as namedtuple Option:
+    #: CLI parser options specific to this plugin, declared as `namedtuple` `Option`:
     #:
-    #:   from collections import namedtuple
-    #:   Option = namedtuple('Option', 'option, default, dest, help')
-    #:   cli_options = [Option('--catalog-title', default = 'My Catalog',
-    #:   dest = 'catalog_title', help = (_('Title of generated catalog. \nDefault:') + " '" + '%default' + "'"))]
-    #:   cli_options parsed in calibre.db.cli.cmd_catalog:option_parser()
+    #:     from collections import namedtuple
+    #:     Option = namedtuple('Option', 'option, default, dest, help')
+    #:     cli_options = [Option('--catalog-title', default = 'My Catalog',
+    #:     dest = 'catalog_title', help = (_('Title of generated catalog. \nDefault:') + " '" + '%default' + "'"))]
+    #:     cli_options parsed in calibre.db.cli.cmd_catalog:option_parser()
     #:
     cli_options = []
 

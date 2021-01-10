@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -53,13 +53,13 @@ class Wizard(QDialog):
         self.widget = WizardWidget(self)
         self.verticalLayout.addWidget(self.widget)
         self.buttonBox = QDialogButtonBox(self)
-        self.buttonBox.setOrientation(Qt.Horizontal)
-        self.buttonBox.setStandardButtons(QDialogButtonBox.Cancel|QDialogButtonBox.Ok)
+        self.buttonBox.setOrientation(Qt.Orientation.Horizontal)
+        self.buttonBox.setStandardButtons(QDialogButtonBox.StandardButton.Cancel|QDialogButtonBox.StandardButton.Ok)
         self.verticalLayout.addWidget(self.buttonBox)
 
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
-        self.setModal(Qt.WindowModal)
+        self.setModal(Qt.WindowModality.WindowModal)
 
     @property
     def xpath(self):
@@ -75,7 +75,7 @@ class XPathEdit(QWidget, Ui_Edit):
 
     def wizard(self):
         wiz = Wizard(self)
-        if wiz.exec_() == wiz.Accepted:
+        if wiz.exec_() == QDialog.DialogCode.Accepted:
             self.edit.setText(wiz.xpath)
 
     def setObjectName(self, *args):

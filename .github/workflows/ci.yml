@@ -7,7 +7,7 @@ jobs:
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
-                os: [ubuntu-latest, macos-latest, windows-2016]
+                os: [ubuntu-20.04, macos-latest, windows-latest]
         steps:
             - name: Checkout source code
               uses: actions/checkout@master
@@ -17,7 +17,7 @@ jobs:
             - name: Set up Python
               uses: actions/setup-python@master
               with:
-                python-version: 3.7
+                python-version: 3.8
 
             - name: Install calibre dependencies
               run:
@@ -33,31 +33,30 @@ jobs:
 
     archtest:
         name: Test on Arch
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-20.04
         container:
             image: 'archlinux/base:latest'
             env:
                 CI: 'true'
-                CALIBRE_PY3_PORT: '1'
         steps:
-            - name: Install calibre dependencies
+            - name: Prepare the container
               run: |
-                set -xe
-                useradd -m ci
                 pacman -Syu --noconfirm
-                pacman -S --noconfirm --needed base-devel sudo git sip chmlib icu jxrlib hunspell libmtp libusbx libwmf optipng podofo python-apsw python-beautifulsoup4 python-cssselect python-css-parser python-dateutil python-dbus python-dnspython python-dukpy python-feedparser python-html2text python-html5-parser python-lxml python-markdown python-mechanize python-msgpack python-netifaces python-unrardll python-pillow python-psutil python-pygments python-pyqt5 python-regex python-zeroconf python-pyqtwebengine qt5-x11extras qt5-svg qt5-imageformats udisks2 hyphen
+                pacman -S --noconfirm tar
 
             - name: Checkout source code
               uses: actions/checkout@master
               with:
                 fetch-depth: 10
 
+            - name: Install calibre dependencies
+              run: setup/arch-ci.sh
+
             - name: Bootstrap calibre
-              run: |
-                  chown -R ci:users $GITHUB_WORKSPACE
-                  runuser -u ci -- python setup.py bootstrap --ephemeral
+              run: runuser -u ci -- python setup.py bootstrap --ephemeral
 
             - name: Test calibre
               run: |
+                  set -xe
                   runuser -u ci -- python setup.py test
-                  chmod +777 .git .git/config
+                  runuser -u ci -- python setup.py test_rs

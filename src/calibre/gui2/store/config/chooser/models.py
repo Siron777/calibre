@@ -1,32 +1,55 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
-from PyQt5.Qt import (Qt, QAbstractItemModel, QIcon, QModelIndex, QSize)
 
-from calibre.customize.ui import is_disabled, disable_plugin, enable_plugin
-from calibre.db.search import _match, CONTAINS_MATCH, EQUALS_MATCH, REGEXP_MATCH
+from PyQt5.Qt import (
+    QAbstractItemModel, QIcon, QModelIndex, QStyledItemDelegate, Qt
+)
+
+from calibre import fit_image
+from calibre.customize.ui import disable_plugin, enable_plugin, is_disabled
+from calibre.db.search import CONTAINS_MATCH, EQUALS_MATCH, REGEXP_MATCH, _match
 from calibre.utils.config_base import prefs
 from calibre.utils.icu import sort_key
 from calibre.utils.search_query_parser import SearchQueryParser
-from polyglot.builtins import unicode_type, range
+from polyglot.builtins import range, unicode_type
+
+
+class Delegate(QStyledItemDelegate):
+
+    def paint(self, painter, option, index):
+        icon = index.data(Qt.ItemDataRole.DecorationRole)
+        if icon and not icon.isNull():
+            QStyledItemDelegate.paint(self, painter, option, QModelIndex())
+            pw, ph = option.rect.width(), option.rect.height()
+            scaled, w, h = fit_image(option.decorationSize.width(), option.decorationSize.height(), pw, ph)
+            r = option.rect
+            if pw > w:
+                x = (pw - w) // 2
+                r = r.adjusted(x, 0, -x, 0)
+            if ph > h:
+                y = (ph - h) // 2
+                r = r.adjusted(0, y, 0, -y)
+            painter.drawPixmap(r, icon.pixmap(w, h))
+        else:
+            QStyledItemDelegate.paint(self, painter, option, index)
 
 
 class Matches(QAbstractItemModel):
 
     HEADERS = [_('Enabled'), _('Name'), _('No DRM'), _('Headquarters'), _('Affiliate'), _('Formats')]
-    HTML_COLS = [1]
+    HTML_COLS = (1,)
+    CENTERED_COLUMNS = (0, 2, 3, 4)
 
     def __init__(self, plugins):
         QAbstractItemModel.__init__(self)
 
         self.NO_DRM_ICON = QIcon(I('ok.png'))
-        self.DONATE_ICON = QIcon()
-        self.DONATE_ICON.addFile(I('donate.png'), QSize(16, 16))
+        self.DONATE_ICON = QIcon(I('donate.png'))
 
         self.all_matches = plugins
         self.matches = plugins
@@ -34,7 +57,7 @@ class Matches(QAbstractItemModel):
         self.search_filter = SearchFilter(self.all_matches)
 
         self.sort_col = 1
-        self.sort_order = Qt.AscendingOrder
+        self.sort_order = Qt.SortOrder.AscendingOrder
 
     def get_plugin(self, index):
         row = index.row()
@@ -59,13 +82,13 @@ class Matches(QAbstractItemModel):
         for i in range(len(self.matches)):
             index = self.createIndex(i, 0)
             data = (True)
-            self.setData(index, data, Qt.CheckStateRole)
+            self.setData(index, data, Qt.ItemDataRole.CheckStateRole)
 
     def enable_none(self):
         for i in range(len(self.matches)):
             index = self.createIndex(i, 0)
             data = (False)
-            self.setData(index, data, Qt.CheckStateRole)
+            self.setData(index, data, Qt.ItemDataRole.CheckStateRole)
 
     def enable_invert(self):
         for i in range(len(self.matches)):
@@ -74,7 +97,7 @@ class Matches(QAbstractItemModel):
     def toggle_plugin(self, index):
         new_index = self.createIndex(index.row(), 0)
         data = (is_disabled(self.get_plugin(index)))
-        self.setData(new_index, data, Qt.CheckStateRole)
+        self.setData(new_index, data, Qt.ItemDataRole.CheckStateRole)
 
     def index(self, row, column, parent=QModelIndex()):
         return self.createIndex(row, column)
@@ -91,10 +114,10 @@ class Matches(QAbstractItemModel):
         return len(self.HEADERS)
 
     def headerData(self, section, orientation, role):
-        if role != Qt.DisplayRole:
+        if role != Qt.ItemDataRole.DisplayRole:
             return None
         text = ''
-        if orientation == Qt.Horizontal:
+        if orientation == Qt.Orientation.Horizontal:
             if section < len(self.HEADERS):
                 text = self.HEADERS[section]
             return (text)
@@ -104,26 +127,30 @@ class Matches(QAbstractItemModel):
     def data(self, index, role):
         row, col = index.row(), index.column()
         result = self.matches[row]
-        if role in (Qt.DisplayRole, Qt.EditRole):
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             if col == 1:
                 return ('<b>%s</b><br><i>%s</i>' % (result.name, result.description))
             elif col == 3:
                 return (result.headquarters)
             elif col == 5:
                 return (', '.join(result.formats).upper())
-        elif role == Qt.DecorationRole:
+        elif role == Qt.ItemDataRole.DecorationRole:
             if col == 2:
                 if result.drm_free_only:
                     return (self.NO_DRM_ICON)
             if col == 4:
                 if result.affiliate:
                     return (self.DONATE_ICON)
-        elif role == Qt.CheckStateRole:
+        elif role == Qt.ItemDataRole.CheckStateRole:
             if col == 0:
                 if is_disabled(result):
-                    return Qt.Unchecked
-                return Qt.Checked
-        elif role == Qt.ToolTipRole:
+                    return Qt.CheckState.Unchecked
+                return Qt.CheckState.Checked
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            if col in self.CENTERED_COLUMNS:
+                return Qt.AlignmentFlag.AlignHCenter
+            return Qt.AlignmentFlag.AlignLeft
+        elif role == Qt.ItemDataRole.ToolTipRole:
             if col == 0:
                 if is_disabled(result):
                     return ('<p>' + _('This store is currently disabled and cannot be used in other parts of calibre.') + '</p>')
@@ -159,7 +186,7 @@ class Matches(QAbstractItemModel):
 
     def flags(self, index):
         if index.column() == 0:
-            return QAbstractItemModel.flags(self, index) | Qt.ItemIsUserCheckable
+            return QAbstractItemModel.flags(self, index) | Qt.ItemFlag.ItemIsUserCheckable
         return QAbstractItemModel.flags(self, index)
 
     def data_as_text(self, match, col):
@@ -181,10 +208,8 @@ class Matches(QAbstractItemModel):
         self.sort_order = order
         if not self.matches:
             return
-        descending = order == Qt.DescendingOrder
-        self.matches.sort(None,
-            lambda x: sort_key(unicode_type(self.data_as_text(x, col))),
-            descending)
+        descending = order == Qt.SortOrder.DescendingOrder
+        self.matches.sort(key=lambda x: sort_key(unicode_type(self.data_as_text(x, col))), reverse=descending)
         if reset:
             self.beginResetModel(), self.endResetModel()
 

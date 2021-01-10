@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement, print_function
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -199,7 +199,7 @@ class RapydScript(Command):  # {{{
 class Resources(Command):  # {{{
 
     description = 'Compile various needed calibre resources'
-    sub_commands = ['kakasi', 'mathjax', 'rapydscript', 'hyphenation']
+    sub_commands = ['kakasi', 'liberation_fonts', 'mathjax', 'rapydscript', 'hyphenation']
 
     def run(self, opts):
         from calibre.utils.serialize import msgpack_dumps
@@ -309,6 +309,14 @@ class Resources(Command):  # {{{
             total = sum(itervalues(stats))
             d[lc] = stats['translated'] / float(total)
         dump_json(d, self.j(self.RESOURCES, 'user-manual-translation-stats.json'))
+
+        src = self.j(self.SRC, '..', 'Changelog.txt')
+        dest = self.j(self.RESOURCES, 'changelog.json')
+        if self.newer(dest, [src]):
+            self.info('\tCreating changelog.json')
+            from setup.changelog import parse
+            with open(src) as f:
+                dump_json(parse(f.read(), parse_dates=False), dest)
 
     def clean(self):
         for x in ('scripts', 'ebook-convert-complete'):

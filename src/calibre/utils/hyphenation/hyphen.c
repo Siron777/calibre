@@ -93,36 +93,18 @@ static PyMethodDef methods[] = {
     {NULL}  /* Sentinel */
 };
 
-#if PY_MAJOR_VERSION >= 3
-#define INITERROR return NULL
-#define INITMODULE PyModule_Create(&module)
-static struct PyModuleDef module = {
-    /* m_base     */ PyModuleDef_HEAD_INIT,
-    /* m_name     */ "hyphen",
-    /* m_doc      */ doc,
-    /* m_size     */ -1,
-    /* m_methods  */ methods,
-    /* m_slots    */ 0,
-    /* m_traverse */ 0,
-    /* m_clear    */ 0,
-    /* m_free     */ 0,
+static int
+exec_module(PyObject *module) { return 0; }
+
+static PyModuleDef_Slot slots[] = { {Py_mod_exec, exec_module}, {0, NULL} };
+
+static struct PyModuleDef module_def = {
+    .m_base     = PyModuleDef_HEAD_INIT,
+    .m_name     = "hyphen",
+    .m_doc      = doc,
+    .m_methods  = methods,
+    .m_slots    = slots,
 };
-CALIBRE_MODINIT_FUNC PyInit_hyphen(void) {
-#else
-#define INITERROR return
-#define INITMODULE Py_InitModule3("hyphen", methods, doc)
-CALIBRE_MODINIT_FUNC inithyphen(void) {
-#endif
 
-    PyObject* m;
-
-    m = INITMODULE;
-    if (m == NULL) {
-        INITERROR;
-    }
-
-#if PY_MAJOR_VERSION >= 3
-    return m;
-#endif
-}
+CALIBRE_MODINIT_FUNC PyInit_hyphen(void) { return PyModuleDef_Init(&module_def); }
 // }}}

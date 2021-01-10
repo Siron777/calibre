@@ -1,8 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import sys
 
@@ -18,7 +17,7 @@ OUTPUT = '/t/dev.pdf'
 class Renderer(QWebEnginePage):
 
     def do_print(self, ok):
-        p = QPageLayout(QPageSize(QPageSize(QPageSize.A4)), QPageLayout.Portrait, QMarginsF(72, 0, 72, 0))
+        p = QPageLayout(QPageSize(QPageSize(QPageSize.PageSizeId.A4)), QPageLayout.Orientation.Portrait, QMarginsF(72, 0, 72, 0))
         self.printToPdf(self.print_finished, p)
 
     def print_finished(self, pdf_data):

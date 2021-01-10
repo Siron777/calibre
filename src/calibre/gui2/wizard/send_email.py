@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -21,7 +21,7 @@ from calibre.utils.smtp import config as smtp_prefs
 from calibre.gui2 import error_dialog, question_dialog
 from polyglot.builtins import unicode_type
 from polyglot.binary import as_hex_unicode, from_hex_unicode
-from polyglot.io import PolyglotBytesIO
+from polyglot.io import PolyglotStringIO
 
 
 class TestEmail(QDialog):
@@ -42,7 +42,7 @@ class TestEmail(QDialog):
             self.to.setText(pa)
         self.test_button = b = QPushButton(_('&Test'), self)
         b.clicked.connect(self.start_test)
-        self.test_done.connect(self.on_test_done, type=Qt.QueuedConnection)
+        self.test_done.connect(self.on_test_done, type=Qt.ConnectionType.QueuedConnection)
         self.h = h = QHBoxLayout()
         h.addWidget(le), h.addWidget(b)
         l.addLayout(h)
@@ -53,7 +53,7 @@ class TestEmail(QDialog):
             l.addWidget(la)
         self.log = QPlainTextEdit(self)
         l.addWidget(self.log)
-        self.bb = bb = QDialogButtonBox(QDialogButtonBox.Close)
+        self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         bb.rejected.connect(self.reject), bb.accepted.connect(self.accept)
         l.addWidget(bb)
 
@@ -89,7 +89,7 @@ class RelaySetup(QDialog):
 
         self.l = l = QGridLayout()
         self.setLayout(l)
-        self.bb = bb = QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         self.tl = QLabel(('<p>'+_('Setup sending email using') +
@@ -117,9 +117,9 @@ class RelaySetup(QDialog):
                 self.ptoggle = QCheckBox(_('&Show password'), self)
                 l.addWidget(self.ptoggle, r, 2)
                 self.ptoggle.stateChanged.connect(
-                        lambda s: self.password.setEchoMode(self.password.Normal if s == Qt.Checked else self.password.Password))
+                        lambda s: self.password.setEchoMode(QLineEdit.EchoMode.Normal if s == Qt.CheckState.Checked else QLineEdit.EchoMode.Password))
         self.username.setText(service['username'])
-        self.password.setEchoMode(self.password.Password)
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.bl = QLabel('<p>' + _(
             'If you plan to use email to send books to your Kindle, remember to'
             ' add your %s email address to the allowed email addresses in your '
@@ -174,8 +174,8 @@ class SendEmail(QWidget, Ui_Form):
             button.clicked.connect(partial(self.create_service_relay, x))
         self.relay_show_password.stateChanged.connect(
          lambda state : self.relay_password.setEchoMode(
-             self.relay_password.Password if
-             state == 0 else self.relay_password.Normal))
+             QLineEdit.EchoMode.Password if
+             state == 0 else QLineEdit.EchoMode.Normal))
         self.test_email_button.clicked.connect(self.test_email)
 
     def changed(self, *args):
@@ -194,7 +194,7 @@ class SendEmail(QWidget, Ui_Form):
     def test_email_settings(self, to):
         opts = smtp_prefs().parse()
         from calibre.utils.smtp import sendmail, create_mail
-        buf = PolyglotBytesIO()
+        buf = PolyglotStringIO()
         debug_out = partial(prints, file=buf)
         oout, oerr = sys.stdout, sys.stderr
         sys.stdout = sys.stderr = buf
@@ -210,7 +210,7 @@ class SendEmail(QWidget, Ui_Form):
         except:
             import traceback
             tb = traceback.format_exc()
-            tb += '\n\nLog:\n' + buf.getvalue().decode('utf-8', 'replace')
+            tb += '\n\nLog:\n' + buf.getvalue()
         finally:
             sys.stdout, sys.stderr = oout, oerr
         return tb
@@ -257,7 +257,7 @@ class SendEmail(QWidget, Ui_Form):
                 }
         }[service]
         d = RelaySetup(service, self)
-        if d.exec_() != d.Accepted:
+        if d.exec_() != QDialog.DialogCode.Accepted:
             return
         self.relay_username.setText(d.username.text())
         self.relay_password.setText(d.password.text())

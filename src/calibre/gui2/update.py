@@ -1,4 +1,4 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -9,7 +9,7 @@ from threading import Thread, Event
 from PyQt5.Qt import (QObject, pyqtSignal, Qt, QUrl, QDialog, QGridLayout,
         QLabel, QCheckBox, QDialogButtonBox, QIcon)
 
-from calibre.constants import (__appname__, __version__, iswindows, isosx,
+from calibre.constants import (__appname__, __version__, iswindows, ismacos,
         isportable, is64bit, numeric_version)
 from calibre import prints, as_unicode
 from calibre.utils.config import prefs
@@ -28,7 +28,7 @@ NO_CALIBRE_UPDATE = (0, 0, 0)
 
 def get_download_url():
     which = ('portable' if isportable else 'windows' if iswindows
-            else 'osx' if isosx else 'linux')
+            else 'osx' if ismacos else 'linux')
     if which == 'windows' and is64bit:
         which += '64'
     return localize_website_link('https://calibre-ebook.com/download_' + which)
@@ -41,7 +41,7 @@ def get_newest_version():
         icon_theme_name = ''
     headers={
         'CALIBRE-VERSION':__version__,
-        'CALIBRE-OS': ('win' if iswindows else 'osx' if isosx else 'oth'),
+        'CALIBRE-OS': ('win' if iswindows else 'osx' if ismacos else 'oth'),
         'CALIBRE-INSTALL-UUID': prefs['installation_uuid'],
         'CALIBRE-ICON-THEME': icon_theme_name,
     }
@@ -129,7 +129,7 @@ class UpdateNotification(QDialog):
 
     def __init__(self, calibre_version, plugin_updates, parent=None):
         QDialog.__init__(self, parent)
-        self.setAttribute(Qt.WA_QuitOnClose, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.resize(400, 250)
         self.l = QGridLayout()
         self.setLayout(self.l)
@@ -156,14 +156,14 @@ class UpdateNotification(QDialog):
         self.cb.setChecked(config.get('new_version_notification'))
         self.cb.stateChanged.connect(self.show_future)
         self.bb = QDialogButtonBox(self)
-        b = self.bb.addButton(_('&Get update'), self.bb.AcceptRole)
+        b = self.bb.addButton(_('&Get update'), QDialogButtonBox.ButtonRole.AcceptRole)
         b.setDefault(True)
         b.setIcon(QIcon(I('arrow-down.png')))
         if plugin_updates > 0:
-            b = self.bb.addButton(_('Update &plugins'), self.bb.ActionRole)
+            b = self.bb.addButton(_('Update &plugins'), QDialogButtonBox.ButtonRole.ActionRole)
             b.setIcon(QIcon(I('plugins/plugin_updater.png')))
-            b.clicked.connect(self.get_plugins, type=Qt.QueuedConnection)
-        self.bb.addButton(self.bb.Cancel)
+            b.clicked.connect(self.get_plugins, type=Qt.ConnectionType.QueuedConnection)
+        self.bb.addButton(QDialogButtonBox.StandardButton.Cancel)
         self.l.addWidget(self.bb, 2, 0, 1, -1)
         self.bb.accepted.connect(self.accept)
         self.bb.rejected.connect(self.reject)
@@ -201,7 +201,7 @@ class UpdateMixin(object):
         if not opts.no_update_check:
             self.update_checker = CheckForUpdates(self)
             self.update_checker.signal.update_found.connect(self.update_found,
-                    type=Qt.QueuedConnection)
+                    type=Qt.ConnectionType.QueuedConnection)
             self.update_checker.start()
 
     def recalc_update_label(self, number_of_plugin_updates):

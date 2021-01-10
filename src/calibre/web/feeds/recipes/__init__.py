@@ -1,5 +1,5 @@
-#!/usr/bin/env  python2
-from __future__ import unicode_literals
+#!/usr/bin/env python
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''
@@ -51,10 +51,12 @@ def compile_recipe(src):
             'xrange': range,
     }
     exec(src, namespace)
+    ua = namespace.get('calibre_most_common_ua')
 
     for x in itervalues(namespace):
         if (isinstance(x, type) and issubclass(x, BasicNewsRecipe) and x not
                 in basic_recipes):
+            x.calibre_most_common_ua = ua
             return x
 
     return None

@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -337,7 +337,7 @@ class Mobi8Reader(object):
             # See https://www.mobileread.com/forums/showthread.php?t=259557
             m = self.aid_re.match(tag)
             if m is not None:
-                self.linked_aids.add(m.group(1))
+                self.linked_aids.add(m.group(1).decode('utf-8'))
                 return m.group(1) + b'-' + self.aid_anchor_suffix
 
         # No tag found, link to start of file

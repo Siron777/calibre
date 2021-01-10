@@ -1,27 +1,25 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import errno, socket, select, os, time
-from contextlib import closing
+import errno, socket, os, time
 from email.utils import formatdate
 from operator import itemgetter
 
 from calibre import prints
-from calibre.constants import iswindows, ispy3
+from calibre.constants import iswindows
 from calibre.srv.errors import HTTPNotFound
-from calibre.utils.config_base import tweaks
 from calibre.utils.localization import get_translator
 from calibre.utils.socket_inheritance import set_socket_inherit
 from calibre.utils.logging import ThreadSafeLog
-from calibre.utils.shared_file import share_open, raise_winerror
+from calibre.utils.shared_file import share_open
 from polyglot.builtins import iteritems, map, range
 from polyglot import reprlib
 from polyglot.http_cookie import SimpleCookie
-from polyglot.builtins import is_py3, unicode_type, as_bytes, as_unicode
+from polyglot.builtins import unicode_type, as_unicode
 from polyglot.urllib import parse_qs, quote as urlquote
 from polyglot.binary import as_hex_unicode as encode_name, from_hex_unicode as decode_name
 
@@ -48,8 +46,7 @@ class MultiDict(dict):  # {{{
     @staticmethod
     def create_from_query_string(qs):
         ans = MultiDict()
-        if ispy3:
-            qs = as_unicode(qs)
+        qs = as_unicode(qs)
         for k, v in iteritems(parse_qs(qs, keep_blank_values=True)):
             dict.__setitem__(ans, as_unicode(k), [as_unicode(x) for x in v])
         return ans
@@ -60,7 +57,7 @@ class MultiDict(dict):  # {{{
                 self[key] = val
 
     def items(self, duplicates=True):
-        f = dict.items if ispy3 else dict.iteritems
+        f = dict.items
         for k, v in f(self):
             if duplicates:
                 for x in v:
@@ -70,7 +67,7 @@ class MultiDict(dict):  # {{{
     iteritems = items
 
     def values(self, duplicates=True):
-        f = dict.values if ispy3 else dict.itervalues
+        f = dict.values
         for v in f(self):
             if duplicates:
                 for x in v:
@@ -148,41 +145,10 @@ def stop_cork(sock):
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 0)
 
 
-def create_sock_pair(port=0):
-    '''Create socket pair. Works also on windows by using an ephemeral TCP port.'''
-    if hasattr(socket, 'socketpair'):
-        client_sock, srv_sock = socket.socketpair()
-        set_socket_inherit(client_sock, False), set_socket_inherit(srv_sock, False)
-        return client_sock, srv_sock
-
-    # Create a non-blocking temporary server socket
-    temp_srv_sock = socket.socket()
-    set_socket_inherit(temp_srv_sock, False)
-    temp_srv_sock.setblocking(False)
-    temp_srv_sock.bind(('127.0.0.1', port))
-    port = temp_srv_sock.getsockname()[1]
-    temp_srv_sock.listen(1)
-    with closing(temp_srv_sock):
-        # Create non-blocking client socket
-        client_sock = socket.socket()
-        client_sock.setblocking(False)
-        set_socket_inherit(client_sock, False)
-        try:
-            client_sock.connect(('127.0.0.1', port))
-        except socket.error as err:
-            # EWOULDBLOCK is not an error, as the socket is non-blocking
-            if err.errno not in socket_errors_nonblocking:
-                raise
-
-        # Use select to wait for connect() to succeed.
-        timeout = 1
-        readable = select.select([temp_srv_sock], [], [], timeout)[0]
-        if temp_srv_sock not in readable:
-            raise Exception('Client socket not connected in {} second(s)'.format(timeout))
-        srv_sock = temp_srv_sock.accept()[0]
-        set_socket_inherit(srv_sock, False)
-        client_sock.setblocking(True)
-
+def create_sock_pair():
+    '''Create socket pair. '''
+    client_sock, srv_sock = socket.socketpair()
+    set_socket_inherit(client_sock, False), set_socket_inherit(srv_sock, False)
     return client_sock, srv_sock
 
 
@@ -292,20 +258,11 @@ def encode_path(*components):
 class Cookie(SimpleCookie):
 
     def _BaseCookie__set(self, key, real_value, coded_value):
-        if not ispy3 and not isinstance(key, bytes):
-            key = key.encode('ascii')  # Python 2.x cannot handle unicode keys
         return SimpleCookie._BaseCookie__set(self, key, real_value, coded_value)
 
 
 def custom_fields_to_display(db):
-    ckeys = set(db.field_metadata.ignorable_field_keys())
-    yes_fields = set(tweaks['content_server_will_display'])
-    no_fields = set(tweaks['content_server_wont_display'])
-    if '*' in yes_fields:
-        yes_fields = ckeys
-    if '*' in no_fields:
-        no_fields = ckeys
-    return frozenset(ckeys & (yes_fields - no_fields))
+    return frozenset(db.field_metadata.ignorable_field_keys())
 
 # Logging {{{
 
@@ -323,46 +280,30 @@ class RotatingStream(object):
         self.set_output()
 
     def set_output(self):
-        if ispy3:
-            if iswindows:
-                self.stream = share_open(self.filename, 'ab')
-            else:
-                # see https://bugs.python.org/issue27805
-                self.stream = open(os.open(self.filename, os.O_WRONLY|os.O_APPEND|os.O_CREAT|os.O_CLOEXEC), 'wb')
+        if iswindows:
+            self.stream = share_open(self.filename, 'a', newline='')
         else:
-            self.stream = share_open(self.filename, 'ab', -1 if iswindows else 1)  # line buffered
+            # see https://bugs.python.org/issue27805
+            self.stream = open(os.open(self.filename, os.O_WRONLY|os.O_APPEND|os.O_CREAT|os.O_CLOEXEC), 'w')
         try:
-            self.current_pos = self.stream.tell()
+            self.stream.tell()
         except EnvironmentError:
             # Happens if filename is /dev/stdout for example
-            self.current_pos = 0
             self.max_size = None
 
     def flush(self):
         self.stream.flush()
 
     def prints(self, level, *args, **kwargs):
-        kwargs['safe_encode'] = True
         kwargs['file'] = self.stream
-        self.current_pos += prints(*args, **kwargs)
-        if iswindows or ispy3:
-            # For some reason line buffering does not work on windows
-            # and in python 3 it only works with text mode streams
-            end = kwargs.get('end', b'\n')
-            if isinstance(end, unicode_type):
-                end = end.encode('utf-8')
-            if b'\n' in end:
-                self.flush()
+        prints(*args, **kwargs)
         self.rollover()
 
     def rename(self, src, dest):
         try:
             if iswindows:
-                import win32file, pywintypes
-                try:
-                    win32file.MoveFileEx(src, dest, win32file.MOVEFILE_REPLACE_EXISTING|win32file.MOVEFILE_WRITE_THROUGH)
-                except pywintypes.error as e:
-                    raise_winerror(e)
+                from calibre_extensions import winutil
+                winutil.move_file(src, dest)
             else:
                 os.rename(src, dest)
         except EnvironmentError as e:
@@ -370,7 +311,7 @@ class RotatingStream(object):
                 raise
 
     def rollover(self):
-        if not self.max_size or self.current_pos <= self.max_size or self.filename in ('/dev/stdout', '/dev/stderr'):
+        if not self.max_size or self.stream.tell() <= self.max_size:
             return
         self.stream.close()
         for i in range(self.history - 1, 0, -1):
@@ -415,7 +356,7 @@ class HandleInterrupt(object):  # {{{
     # On windows socket functions like accept(), recv(), send() are not
     # interrupted by a Ctrl-C in the console. So to make Ctrl-C work we have to
     # use this special context manager. See the echo server example at the
-    # bottom of this file for how to use it.
+    # bottom of srv/loop.py for how to use it.
 
     def __init__(self, action):
         if not iswindows:
@@ -438,24 +379,21 @@ class HandleInterrupt(object):  # {{{
                 if self.action is not None:
                     self.action()
                     self.action = None
-                # Typical C implementations would return 1 to indicate that
-                # the event was processed and other control handlers in the
-                # stack should not be executed.  However, that would
-                # prevent the Python interpreter's handler from translating
-                # CTRL-C to a `KeyboardInterrupt` exception, so we pretend
-                # that we didn't handle it.
+                    return 1
             return 0
         self.handle = handle
 
     def __enter__(self):
         if iswindows:
             if self.SetConsoleCtrlHandler(self.handle, 1) == 0:
-                raise WindowsError()
+                import ctypes
+                raise ctypes.WinError()
 
     def __exit__(self, *args):
         if iswindows:
             if self.SetConsoleCtrlHandler(self.handle, 0) == 0:
-                raise WindowsError()
+                import ctypes
+                raise ctypes.WinError()
 # }}}
 
 
@@ -531,10 +469,5 @@ def get_use_roman():
     return _use_roman
 
 
-if iswindows and not is_py3:
-    def fast_now_strftime(fmt):
-        fmt = as_bytes(fmt, encoding='mbcs')
-        return time.strftime(fmt).decode('mbcs', 'replace')
-else:
-    def fast_now_strftime(fmt):
-        return as_unicode(time.strftime(fmt), errors='replace')
+def fast_now_strftime(fmt):
+    return as_unicode(time.strftime(fmt), errors='replace')

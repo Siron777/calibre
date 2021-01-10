@@ -1,6 +1,6 @@
-#!/usr/bin/env  python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -8,12 +8,8 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 import io
 from struct import pack
 
-from calibre.constants import plugins
 from polyglot.builtins import range
-cPalmdoc = plugins['cPalmdoc'][0]
-if not cPalmdoc:
-    raise RuntimeError(('Failed to load required cPalmdoc module: '
-            '%s')%plugins['cPalmdoc'][1])
+from calibre_extensions import cPalmdoc
 
 
 def decompress_doc(data):

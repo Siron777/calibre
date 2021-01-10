@@ -1,11 +1,11 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-from PyQt5.Qt import QTextCharFormat
+from PyQt5.Qt import QTextCharFormat, QTextFormat
 
 from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES
 from calibre.ebooks.oeb.polish.container import guess_type
@@ -42,7 +42,7 @@ def editor_from_syntax(syntax, parent=None):
         return Editor(syntax, parent=parent)
 
 
-SYNTAX_PROPERTY = QTextCharFormat.UserProperty
+SYNTAX_PROPERTY = QTextFormat.Property.UserProperty
 SPELL_PROPERTY = SYNTAX_PROPERTY + 1
 SPELL_LOCALE_PROPERTY = SPELL_PROPERTY + 1
 LINK_PROPERTY = SPELL_LOCALE_PROPERTY + 1

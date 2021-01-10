@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -35,7 +35,7 @@ class HistoryBox(QComboBox):
             history.append(val)
         self.clear()
         self.addItems(history)
-        self.setCurrentIndex(self.findText(val, Qt.MatchFixedString))
+        self.setCurrentIndex(self.findText(val, Qt.MatchFlag.MatchFixedString))
 
     def save_history(self, opt_name):
         history = [unicode_type(self.itemText(i)) for i in range(self.count())]

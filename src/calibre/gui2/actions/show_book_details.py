@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
+
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -39,9 +39,9 @@ class ShowBookDetailsAction(InterfaceAction):
         if index.isValid():
             d = BookInfo(self.gui, self.gui.library_view, index,
                     self.gui.book_details.handle_click)
-            d.open_cover_with.connect(self.gui.bd_open_cover_with, type=Qt.QueuedConnection)
+            d.open_cover_with.connect(self.gui.bd_open_cover_with, type=Qt.ConnectionType.QueuedConnection)
             self.memory.append(d)
-            d.closed.connect(self.closed, type=Qt.QueuedConnection)
+            d.closed.connect(self.closed, type=Qt.ConnectionType.QueuedConnection)
             d.show()
 
     def closed(self, d):
